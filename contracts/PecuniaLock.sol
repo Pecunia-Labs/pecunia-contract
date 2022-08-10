@@ -1,0 +1,150 @@
+//SPDX-License-Identifier: Unlicense
+pragma solidity ^0.8.0;
+
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/utils/Context.sol";
+import "./verifier.sol";
+import "hardhat/console.sol";
+
+contract PecuniaLock is Context {
+
+    event Register(
+        bytes32 indexed boxhash,
+        address indexed user
+    );
+  
+    event Recharge(
+        address indexed sender,
+        address indexed user,
+        address tokenAddr,
+        uint amount
+    );
+
+    event Withdraw(
+        address indexed user,
+        address indexed to,
+        address tokenAddr,
+        uint amount
+    );
+
+    Verifier verifier = new Verifier();
+
+    struct SafeBox{
+        bytes32 boxhash;
+        address user;
+        mapping(address => uint) balance;
+    }
+
+    mapping(bytes32 => SafeBox) public boxhash2safebox;
+
+    mapping(address => bytes32) public user2boxhash;
+
+    mapping(uint => bool) public usedProof;
+
+
+    constructor() {}
+
+
+    function balanceOf(address user, address[] memory tokenAddrs) public view returns(uint[] memory bals) {
+        bytes32 boxhash = user2boxhash[user];
+        SafeBox storage box = boxhash2safebox[boxhash];
+        bals = new uint[](tokenAddrs.length);
+        for (uint i=0; i<tokenAddrs.length; i++) {
+            address tokenAddr = tokenAddrs[i];
+            bals[i] = box.balance[tokenAddr];
+        }
+    }
+
+
+    function register(
+        bytes32 boxhash,
+        uint[8] memory proof,
+        uint pswHash,
+        uint allHash
+    ) public {
+        SafeBox storage box = boxhash2safebox[boxhash];
+
+        require(user2boxhash[_msgSender()] == bytes32(0), "PecuniaLock::register: one user one safebox");
+        require(box.boxhash == bytes32(0), "PecuniaLock::register: boxhash has been registered");
+        require(keccak256(abi.encodePacked(pswHash, _msgSender())) == boxhash, "PecuniaLock::register: boxhash error");
+        require(
+            verifier.verifyProof(
+                [proof[0], proof[1]],
+                [[proof[2], proof[3]], [proof[4], proof[5]]],
+                [proof[6], proof[7]],
+                [pswHash, uint160(0x00), 0, allHash]
+            ),
+            "PecuniaLock::register: verifyProof fail"
+        );
+
+        box.boxhash = boxhash;
+        box.user = _msgSender();
+
+        user2boxhash[box.user] = boxhash;
+
+        emit Register(boxhash, box.user);
+    }
+
+
+    function rechargeWithBoxhash(
+        address sender,
+        bytes32 boxhash,
+        address tokenAddr,
+        uint amount
+    ) public {
+        SafeBox storage box = boxhash2safebox[boxhash];
+        require(box.boxhash != bytes32(0), "PecuniaLock::rechargeWithBoxhash: safebox not register yet");
+
+        IERC20(tokenAddr).transferFrom(sender, address(this), amount);
+        box.balance[tokenAddr] += amount;
+
+        emit Recharge(sender, box.user, tokenAddr, amount);
+    }
+
+
+    function rechargeWithAddress(
+        address sender,
+        address recipient,
+        address tokenAddr,
+        uint amount
+    ) public {
+        bytes32 boxhash = user2boxhash[recipient];
+        rechargeWithBoxhash(sender, boxhash, tokenAddr, amount);
+    }
+
+
+    function withdraw(
+        uint[8] memory proof,
+        uint pswHash,
+        address tokenAddr,
+        uint amount,
+        uint allHash,
+        address to
+    ) public {
+        require(!usedProof[proof[0]], "PecuniaLock::withdraw: proof used");
+
+        bytes32 boxhash = user2boxhash[_msgSender()];
+        require(keccak256(abi.encodePacked(pswHash, _msgSender())) == boxhash, "PecuniaLock::withdraw: pswHash error");
+
+        require(
+            verifier.verifyProof(
+                [proof[0], proof[1]],
+                [[proof[2], proof[3]], [proof[4], proof[5]]],
+                [proof[6], proof[7]],
+                [pswHash, uint160(tokenAddr), amount, allHash]
+            ),
+            "PecuniaLock::withdraw: verifyProof fail"
+        );
+
+        SafeBox storage box = boxhash2safebox[boxhash];
+        require(box.boxhash != bytes32(0), "PecuniaLock::withdraw: safebox not register yet");
+
+        usedProof[proof[0]] = true;
+        box.balance[tokenAddr] -= amount;
+
+        IERC20(tokenAddr).transfer(to, amount);
+
+        emit Withdraw(box.user, to, tokenAddr, amount);
+    }
+
+}
