@@ -68,12 +68,12 @@ async function main() {
 	await usdt.connect(accounts[0]).approve(PecuniaLock.address, m(100, 18))
 	console.log('step 1 approve done')
 
-	await PecuniaLock.connect(accounts[0]).rechargeWithAddress(accounts[0].address, accounts[0].address, usdt.address, m(100, 18))
+	await PecuniaLock.connect(accounts[0]).rechargeWithAddress(accounts[0].address, usdt.address, accounts[1].address, m(100, 18))
 	console.log('step 2 rechargeWithAddress done')
 
 	// let psw = 'abc123'
 	let tokenAddr2 = usdt.address //hex or int
-	let amount2 = s(m(30, 18)) //hex or int
+	let amount2 = s(m(100, 18)) //hex or int
 	let input2 = [stringToHex(psw), tokenAddr2, amount2]
 	console.log('input2', input2)
 
@@ -102,7 +102,7 @@ async function main() {
 			BigNumber.from(data2.proof.pi_c[1]).toHexString()
 		]
 
-		await PecuniaLock.withdraw(proof2, pswHash2, usdt.address, m(30, 18), allHash2, accounts[2].address)
+		await PecuniaLock.connect(accounts[1]).withdraw(proof2, pswHash2, usdt.address, allHash2, accounts[0].address)
 		console.log('withdraw done')
 
 

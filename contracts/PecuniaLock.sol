@@ -16,7 +16,7 @@ contract PecuniaLock is Context {
     event Recharge(
         address indexed sender,
         address indexed user,
-        address tokenAddr,
+        address heirAddress,
         uint amount
     );
 
@@ -27,12 +27,12 @@ contract PecuniaLock is Context {
         uint amount
     );
 
-    Verifier verifier = new Verifier();
+    Verifier verifier;
 
     struct SafeBox{
         bytes32 boxhash;
         address user;
-        mapping(address => uint) balance;
+        mapping(address => uint) heirToBalance;
     }
 
     mapping(bytes32 => SafeBox) public boxhash2safebox;
@@ -42,17 +42,28 @@ contract PecuniaLock is Context {
     mapping(uint => bool) public usedProof;
 
 
-    constructor() {}
+    constructor() {
+        verifier = new Verifier();
+    }
 
 
-    function balanceOf(address user, address[] memory tokenAddrs) public view returns(uint[] memory bals) {
-        bytes32 boxhash = user2boxhash[user];
-        SafeBox storage box = boxhash2safebox[boxhash];
-        bals = new uint[](tokenAddrs.length);
-        for (uint i=0; i<tokenAddrs.length; i++) {
-            address tokenAddr = tokenAddrs[i];
-            bals[i] = box.balance[tokenAddr];
-        }
+    // function balanceOf(address user, address[] memory tokenAddrs) public view returns(uint[] memory bals) {
+    //     bytes32 boxhash = user2boxhash[user];
+    //     SafeBox storage box = boxhash2safebox[boxhash];
+    //     bals = new uint[](tokenAddrs.length);
+    //     for (uint i=0; i<tokenAddrs.length; i++) {
+    //         address tokenAddr = tokenAddrs[i];
+    //         bals[i] = box.balance[tokenAddr];
+    //     }
+    // }
+
+    function heirIsValid(
+        bytes32 boxhash,
+        address heir
+    ) public 
+    view
+    returns(bool){
+        return boxhash2safebox[boxhash].heirToBalance[heir] > 0;
     }
 
 
@@ -87,29 +98,31 @@ contract PecuniaLock is Context {
 
 
     function rechargeWithBoxhash(
-        address sender,
+        address boxOwner,
         bytes32 boxhash,
         address tokenAddr,
+        address heirAddr,
         uint amount
     ) public {
         SafeBox storage box = boxhash2safebox[boxhash];
         require(box.boxhash != bytes32(0), "PecuniaLock::rechargeWithBoxhash: safebox not register yet");
 
-        IERC20(tokenAddr).transferFrom(sender, address(this), amount);
-        box.balance[tokenAddr] += amount;
+        IERC20(tokenAddr).transferFrom(boxOwner, address(this), amount);
+        box.heirToBalance[heirAddr] += amount;
 
-        emit Recharge(sender, box.user, tokenAddr, amount);
+        emit Recharge(boxOwner, box.user, heirAddr, amount);
     }
 
 
     function rechargeWithAddress(
-        address sender,
-        address recipient,
+        address boxOwner,
         address tokenAddr,
+        address heirAddr,
         uint amount
     ) public {
-        bytes32 boxhash = user2boxhash[recipient];
-        rechargeWithBoxhash(sender, boxhash, tokenAddr, amount);
+        bytes32 boxhash = user2boxhash[boxOwner];
+        // console.log("box hash", boxhash);
+        rechargeWithBoxhash(boxOwner, boxhash, tokenAddr, heirAddr, amount);
     }
 
 
@@ -117,14 +130,18 @@ contract PecuniaLock is Context {
         uint[8] memory proof,
         uint pswHash,
         address tokenAddr,
-        uint amount,
         uint allHash,
-        address to
+        address boxOwner
     ) public {
+        address heir = msg.sender;
         require(!usedProof[proof[0]], "PecuniaLock::withdraw: proof used");
 
-        bytes32 boxhash = user2boxhash[_msgSender()];
-        require(keccak256(abi.encodePacked(pswHash, _msgSender())) == boxhash, "PecuniaLock::withdraw: pswHash error");
+        bytes32 boxhash = user2boxhash[boxOwner];
+        require(keccak256(abi.encodePacked(pswHash, boxOwner)) == boxhash, "PecuniaLock::withdraw: pswHash error");
+        require(heirIsValid(boxhash, heir), "PecuniaLock::withdraw: heir not valid");
+        SafeBox storage box = boxhash2safebox[boxhash];
+        require(box.boxhash != bytes32(0), "PecuniaLock::withdraw: safebox not register yet");
+        uint amount = box.heirToBalance[heir];
 
         require(
             verifier.verifyProof(
@@ -136,15 +153,12 @@ contract PecuniaLock is Context {
             "PecuniaLock::withdraw: verifyProof fail"
         );
 
-        SafeBox storage box = boxhash2safebox[boxhash];
-        require(box.boxhash != bytes32(0), "PecuniaLock::withdraw: safebox not register yet");
-
         usedProof[proof[0]] = true;
-        box.balance[tokenAddr] -= amount;
+        box.heirToBalance[heir] -= amount;
 
-        IERC20(tokenAddr).transfer(to, amount);
+        IERC20(tokenAddr).transfer(heir, amount);
 
-        emit Withdraw(box.user, to, tokenAddr, amount);
+        emit Withdraw(box.user, heir, tokenAddr, amount);
     }
 
 }
