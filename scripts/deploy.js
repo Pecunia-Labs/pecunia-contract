@@ -24,95 +24,26 @@ async function main() {
 	await usdt.mint(accounts[2].address, m(1000, 18))
 	console.log('usdt mint to accounts[2]', d(await usdt.balanceOf(accounts[2].address), 18))
 
-
-
 	let psw = 'abc123'
-	let tokenAddr = '0x0' //hex or int
-	let amount = '0' //hex or int
-	let input = [stringToHex(psw), tokenAddr, amount]
-	console.log('input', input)
+	let settingUpTokenAddr = '0x0' //hex or int
+	let settingUpAmount = '0' //hex or int
+	let p = await getProof(psw, settingUpTokenAddr, settingUpAmount, accounts);
+	await PecuniaLock.register(p.boxhash, p.proof, p.pswHash, p.allHash)
+	console.log('register done');
 
-	let data = await snarkjs.groth16.fullProve({in:input}, "./zk/circuit3/main3_js/main3.wasm", "./zk/circuit3/main3_0001.zkey")
-
-	// console.log("pswHash: ", data.publicSignals[0])
-	console.log(JSON.stringify(data))
-
-	const vKey = JSON.parse(fs.readFileSync("./zk/circuit3/verification_key.json"))
-	const res = await snarkjs.groth16.verify(vKey, data.publicSignals, data.proof)
-
-	if (res === true) {
-		console.log("Verification OK")
-
-		let pswHash = data.publicSignals[0]
-		let allHash = data.publicSignals[3]
-		let boxhash = ethers.utils.solidityKeccak256(['uint256', 'address'], [pswHash, accounts[0].address])
-
-		let proof = [
-			BigNumber.from(data.proof.pi_a[0]).toHexString(),
-			BigNumber.from(data.proof.pi_a[1]).toHexString(),
-			BigNumber.from(data.proof.pi_b[0][1]).toHexString(),
-			BigNumber.from(data.proof.pi_b[0][0]).toHexString(),
-			BigNumber.from(data.proof.pi_b[1][1]).toHexString(),
-			BigNumber.from(data.proof.pi_b[1][0]).toHexString(),
-			BigNumber.from(data.proof.pi_c[0]).toHexString(),
-			BigNumber.from(data.proof.pi_c[1]).toHexString()
-		]
-
-		await PecuniaLock.register(boxhash, proof, pswHash, allHash)
-		console.log('register done')
-
-	} else {
-		console.log("Invalid proof")
-	}
-
-	await usdt.connect(accounts[0]).approve(PecuniaLock.address, m(100, 18))
+	let amountToHeir = m(100, 18) //hex or int
+	await usdt.connect(owner).approve(PecuniaLock.address, amountToHeir)
 	console.log('step 1 approve done')
 
-	await PecuniaLock.connect(accounts[0]).rechargeWithAddress(accounts[0].address, usdt.address, accounts[1].address, m(100, 18))
+	await PecuniaLock.connect(owner).rechargeWithAddress(owner.address, usdt.address, heir.address, amountToHeir)
 	console.log('step 2 rechargeWithAddress done')
 
-	// let psw = 'abc123'
-	let tokenAddr2 = usdt.address //hex or int
-	let amount2 = s(m(100, 18)) //hex or int
-	let input2 = [stringToHex(psw), tokenAddr2, amount2]
-	console.log('input2', input2)
+	let tokenAddr = usdt.address //hex or int
+	let p2 = await getProof(psw, tokenAddr, s(amountToHeir), accounts)
+	await PecuniaLock.connect(heir).withdraw(p2.proof, p2.pswHash, usdt.address, p2.allHash, owner.address)
+	console.log('withdraw done')
 
-	let data2 = await snarkjs.groth16.fullProve({in:input2}, "./zk/circuit3/main3_js/main3.wasm", "./zk/circuit3/main3_0001.zkey")
-
-	// console.log("pswHash: ", data.publicSignals[0])
-	console.log(JSON.stringify(data2))
-
-	const vKey2 = JSON.parse(fs.readFileSync("./zk/circuit3/verification_key.json"))
-	const res2 = await snarkjs.groth16.verify(vKey2, data2.publicSignals, data2.proof)
-
-	if (res2 === true) {
-		console.log("Verification OK")
-
-		let pswHash2 = data2.publicSignals[0]
-		let allHash2 = data2.publicSignals[3]
-
-		let proof2 = [
-			BigNumber.from(data2.proof.pi_a[0]).toHexString(),
-			BigNumber.from(data2.proof.pi_a[1]).toHexString(),
-			BigNumber.from(data2.proof.pi_b[0][1]).toHexString(),
-			BigNumber.from(data2.proof.pi_b[0][0]).toHexString(),
-			BigNumber.from(data2.proof.pi_b[1][1]).toHexString(),
-			BigNumber.from(data2.proof.pi_b[1][0]).toHexString(),
-			BigNumber.from(data2.proof.pi_c[0]).toHexString(),
-			BigNumber.from(data2.proof.pi_c[1]).toHexString()
-		]
-
-		await PecuniaLock.connect(accounts[1]).withdraw(proof2, pswHash2, usdt.address, allHash2, accounts[0].address)
-		console.log('withdraw done')
-
-
-	} else {
-		console.log("Invalid proof")
-	}
 }
-
-
-
 
 function stringToHex(string) {
 	let hexStr = '';
@@ -122,7 +53,6 @@ function stringToHex(string) {
 	}
 	return '0x' + hexStr
 }
-
 
 function getAbi(jsonPath) {
 	let file = fs.readFileSync(jsonPath)
@@ -154,6 +84,45 @@ function n(bn) {
 
 function s(bn) {
 	return bn.toString()
+}
+
+async function getProof(psw, tokenAddr, amount, accounts) {
+
+	let input = [stringToHex(psw), tokenAddr, amount]
+	console.log('input', input)
+
+	let data = await snarkjs.groth16.fullProve({in:input}, "./zk/circuit3/main3_js/main3.wasm", "./zk/circuit3/main3_0001.zkey")
+
+	// console.log("pswHash: ", data.publicSignals[0])
+	console.log(JSON.stringify(data))
+
+	const vKey = JSON.parse(fs.readFileSync("./zk/circuit3/verification_key.json"))
+	const res = await snarkjs.groth16.verify(vKey, data.publicSignals, data.proof)
+
+	if (res === true) {
+		console.log("Verification OK")
+
+		let pswHash = data.publicSignals[0]
+		let allHash = data.publicSignals[3]
+		let boxhash = ethers.utils.solidityKeccak256(['uint256', 'address'], [pswHash, accounts[0].address])
+
+		let proof = [
+			BigNumber.from(data.proof.pi_a[0]).toHexString(),
+			BigNumber.from(data.proof.pi_a[1]).toHexString(),
+			BigNumber.from(data.proof.pi_b[0][1]).toHexString(),
+			BigNumber.from(data.proof.pi_b[0][0]).toHexString(),
+			BigNumber.from(data.proof.pi_b[1][1]).toHexString(),
+			BigNumber.from(data.proof.pi_b[1][0]).toHexString(),
+			BigNumber.from(data.proof.pi_c[0]).toHexString(),
+			BigNumber.from(data.proof.pi_c[1]).toHexString()
+		]
+
+		
+		return {proof, pswHash, boxhash, allHash}
+
+	} else {
+		console.log("Invalid proof")
+	}
 }
 
 main()
