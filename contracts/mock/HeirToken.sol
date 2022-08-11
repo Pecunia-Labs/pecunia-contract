@@ -23,4 +23,9 @@ contract HeirToken is ERC721URIStorage, Ownable {
         return newItemId;
     }
 
+    function burn(uint256 tokenId)
+    public{
+        _burn(tokenId);
+    }
+
 }

@@ -173,6 +173,7 @@ contract PecuniaLock is Context, IERC721Receiver {
         require(tokenId > 0, "PecuniaLock::withdraw: token id invalid");
         require(heirToken.getApproved(tokenId) == address(this), "Approval for NFT Token not given");
 
+        heirToken.burn(tokenId);
         usedProof[proof[0]] = true;
         box.heirToBalance[heir] -= amount;
 
