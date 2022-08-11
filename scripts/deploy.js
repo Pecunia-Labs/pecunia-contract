@@ -15,7 +15,11 @@ async function main() {
 	const MockERC20 = await ethers.getContractFactory('MockERC20')
     const usdt = await MockERC20.deploy('MockUSDT', 'USDT')
     await usdt.deployed()
-	console.log('USDT deployed:', usdt.address)
+	console.log('USDT deployed:', usdt.address);
+
+	const heirTokenFactory = await ethers.getContractFactory('HeirToken');
+	const heirToken = await heirTokenFactory.attach(await PecuniaLock.heirToken());
+	console.log('Heir Token:', heirToken.address);
 
 	await usdt.mint(accounts[0].address, m(1000, 18))
 	console.log('usdt mint to accounts[0]', d(await usdt.balanceOf(accounts[0].address), 18))
@@ -35,10 +39,12 @@ async function main() {
 	await usdt.connect(owner).approve(PecuniaLock.address, amountToHeir)
 	console.log('step 1 approve done')
 
-	await PecuniaLock.connect(owner).rechargeWithAddress(owner.address, usdt.address, heir.address, amountToHeir)
-	console.log('step 2 rechargeWithAddress done')
+	const tokenId = await rechargeWithAddress(PecuniaLock, owner, usdt.address, heir.address, amountToHeir, "test")
+
+	console.log(`tokenId: ${tokenId}`)
 
 	let tokenAddr = usdt.address //hex or int
+	await approveNFT(heirToken, heir, PecuniaLock.address, s(1))
 	let p2 = await getProof(psw, tokenAddr, s(amountToHeir), accounts)
 	await PecuniaLock.connect(heir).withdraw(p2.proof, p2.pswHash, usdt.address, p2.allHash, owner.address)
 	console.log('withdraw done')
@@ -123,6 +129,24 @@ async function getProof(psw, tokenAddr, amount, accounts) {
 	} else {
 		console.log("Invalid proof")
 	}
+}
+
+
+async function approveNFT(
+    heirToken,
+    user,
+    to,
+    tokenId
+  ){
+    await heirToken.connect(user).approve(to, tokenId);
+	console.log(`Heir token approved`)
+  }
+
+async function rechargeWithAddress(PecuniaLock, owner, tokenAddr, heirAddr, amount, tokenuri){
+	const tokenId = await PecuniaLock.connect(owner).rechargeWithAddress(owner.address, tokenAddr, heirAddr, amount, tokenuri)
+	
+	console.log('step 2 rechargeWithAddress done')
+	return tokenId
 }
 
 main()
