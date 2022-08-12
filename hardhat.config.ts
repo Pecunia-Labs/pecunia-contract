@@ -8,7 +8,7 @@ dotenv.config({ path: ".env.local" });
 
 export default {
   solidity: {
-    version: "0.8.2",
+    version: "0.8.7",
     settings: {
       optimizer: {
         enabled: true,

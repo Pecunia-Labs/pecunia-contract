@@ -39,7 +39,7 @@ async function main() {
 	await usdt.connect(owner).approve(PecuniaLock.address, amountToHeir)
 	console.log('step 1 approve done')
 
-	const tokenId = await rechargeWithAddress(PecuniaLock, owner, usdt.address, heir.address, amountToHeir, "test")
+	const tokenId = await rechargeWithAddress(PecuniaLock, owner, usdt.address, heir.address, amountToHeir, 60, "test")
 
 	console.log(`tokenId: ${tokenId}`)
 
@@ -94,22 +94,22 @@ function s(bn) {
 
 async function getProof(psw, tokenAddr, amount, accounts) {
 
-	let input = [stringToHex(psw), tokenAddr, amount]
+	let input = [stringToHex(psw), amount]
 	console.log('input', input)
 
-	let data = await snarkjs.groth16.fullProve({in:input}, "./zk/circuit3/main3_js/main3.wasm", "./zk/circuit3/main3_0001.zkey")
+	let data = await snarkjs.groth16.fullProve({in:input}, "./zk/new_circuit/circuit_js/circuit.wasm", "./zk/new_circuit/circuit_0001.zkey")
 
 	// console.log("pswHash: ", data.publicSignals[0])
 	console.log(JSON.stringify(data))
 
-	const vKey = JSON.parse(fs.readFileSync("./zk/circuit3/verification_key.json"))
+	const vKey = JSON.parse(fs.readFileSync("./zk/new_circuit/verification_key.json"))
 	const res = await snarkjs.groth16.verify(vKey, data.publicSignals, data.proof)
 
 	if (res === true) {
 		console.log("Verification OK")
 
 		let pswHash = data.publicSignals[0]
-		let allHash = data.publicSignals[3]
+		let allHash = data.publicSignals[2]
 		let boxhash = ethers.utils.solidityKeccak256(['uint256', 'address'], [pswHash, accounts[0].address])
 
 		let proof = [
@@ -142,8 +142,8 @@ async function approveNFT(
 	console.log(`Heir token approved`)
   }
 
-async function rechargeWithAddress(PecuniaLock, owner, tokenAddr, heirAddr, amount, tokenuri){
-	const tokenId = await PecuniaLock.connect(owner).rechargeWithAddress(owner.address, tokenAddr, heirAddr, amount, tokenuri)
+async function rechargeWithAddress(PecuniaLock, owner, tokenAddr, heirAddr, amount, interval, tokenuri){
+	const tokenId = await PecuniaLock.connect(owner).rechargeWithAddress(owner.address, tokenAddr, heirAddr, amount, s(interval), tokenuri)
 	
 	console.log('step 2 rechargeWithAddress done')
 	return tokenId
