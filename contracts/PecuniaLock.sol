@@ -36,7 +36,6 @@ contract PecuniaLock is Context, IERC721Receiver {
     event Withdraw(
         address indexed user,
         address indexed to,
-        address tokenAddr,
         uint amount
     );
 
@@ -115,17 +114,15 @@ contract PecuniaLock is Context, IERC721Receiver {
     function rechargeWithBoxhash(
         address boxOwner,
         bytes32 boxhash,
-        address tokenAddr,
         address heirAddr,
         uint amount,
         uint interval,
         string memory tokenURI
     ) public 
     returns (uint256 tokenId){
+        require(amount > 0, "PecuniaLock::rechargeWithBoxhash: Insufficient Amount send");
         SafeBox storage box = boxhash2safebox[boxhash];
         require(box.boxhash != bytes32(0), "PecuniaLock::rechargeWithBoxhash: safebox not register yet");
-
-        IERC20(tokenAddr).transferFrom(boxOwner, address(this), amount);
         box.heirToBalance[heirAddr] += amount;
 
         tokenId = heirToken.mint(heirAddr, tokenURI);
@@ -141,22 +138,22 @@ contract PecuniaLock is Context, IERC721Receiver {
 
     function rechargeWithAddress(
         address boxOwner,
-        address tokenAddr,
         address heirAddr,
-        uint amount,
         uint interval,
         string memory tokenURI
     ) public 
+    payable
     returns (uint256 tokenId){
         bytes32 boxhash = user2boxhash[boxOwner];
-        tokenId = rechargeWithBoxhash(boxOwner, boxhash, tokenAddr, heirAddr, amount, interval, tokenURI);
+        uint amount = msg.value;
+        console.log("amount deposited=", amount);
+        tokenId = rechargeWithBoxhash(boxOwner, boxhash, heirAddr, amount, interval, tokenURI);
     }
 
 
     function withdraw(
         uint[8] memory proof,
         uint pswHash,
-        address tokenAddr,
         uint allHash,
         address boxOwner
     ) public {
@@ -171,6 +168,7 @@ contract PecuniaLock is Context, IERC721Receiver {
         require(box.boxhash != bytes32(0), "PecuniaLock::withdraw: safebox not register yet");
         
         uint256 amount = box.heirToBalance[heir];
+        console.log("amount withdrawn", amount);
 
         require(
             verifier.verifyProof(
@@ -189,9 +187,9 @@ contract PecuniaLock is Context, IERC721Receiver {
         usedProof[proof[0]] = true;
         box.heirToBalance[heir] -= amount;
 
-        IERC20(tokenAddr).transfer(heir, amount);
+        payable(heir).transfer(amount);
 
-        emit Withdraw(box.user, heir, tokenAddr, amount);
+        emit Withdraw(box.user, heir, amount);
     }
 
     // function checkUpkeep(bytes calldata /* checkData */) external view override returns (bool upkeepNeeded, bytes memory /* performData */) {

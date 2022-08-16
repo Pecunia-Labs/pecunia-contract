@@ -35,7 +35,7 @@ async function main() {
 	await PecuniaLock.register(p.boxhash, p.proof, p.pswHash, p.allHash)
 	console.log('register done');
 
-	let amountToHeir = m(100, 18) //hex or int
+	let amountToHeir = m(400, 18) //hex or int
 	await usdt.connect(owner).approve(PecuniaLock.address, amountToHeir)
 	console.log('step 1 approve done')
 
@@ -46,7 +46,7 @@ async function main() {
 	let tokenAddr = usdt.address //hex or int
 	await approveNFT(heirToken, heir, PecuniaLock.address, s(1))
 	let p2 = await getProof(psw, tokenAddr, s(amountToHeir), accounts)
-	await PecuniaLock.connect(heir).withdraw(p2.proof, p2.pswHash, usdt.address, p2.allHash, owner.address)
+	await PecuniaLock.connect(heir).withdraw(p2.proof, p2.pswHash, p2.allHash, owner.address)
 	console.log('withdraw done')
 
 }
@@ -110,6 +110,7 @@ async function getProof(psw, tokenAddr, amount, accounts) {
 
 		let pswHash = data.publicSignals[0]
 		let allHash = data.publicSignals[2]
+		// TODO remove aacounts and add owner address
 		let boxhash = ethers.utils.solidityKeccak256(['uint256', 'address'], [pswHash, accounts[0].address])
 
 		let proof = [
@@ -143,7 +144,7 @@ async function approveNFT(
   }
 
 async function rechargeWithAddress(PecuniaLock, owner, tokenAddr, heirAddr, amount, interval, tokenuri){
-	const tokenId = await PecuniaLock.connect(owner).rechargeWithAddress(owner.address, tokenAddr, heirAddr, amount, s(interval), tokenuri)
+	const tokenId = await PecuniaLock.connect(owner).rechargeWithAddress(owner.address, heirAddr, s(interval), tokenuri, {value: ethers.utils.parseEther('400')})
 	
 	console.log('step 2 rechargeWithAddress done')
 	return tokenId
