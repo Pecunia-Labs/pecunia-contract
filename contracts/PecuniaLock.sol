@@ -199,8 +199,8 @@ contract PecuniaLock is Context, IERC721Receiver {
         usedProof[proof[0]] = true;
 
         box.withdrawSigned[heir] = true;
-        // TODO remove this
-        checkUpkeep();
+        // // TODO remove this
+        // checkUpkeep();
         emit WithdrawSigned(box.user, heir, amount);
     }
 
@@ -214,8 +214,6 @@ contract PecuniaLock is Context, IERC721Receiver {
         for(uint i=0; i< boxHashes.length; i++){
             bytes32 bh = boxHashes[i];
             SafeBox storage sb = boxhash2safebox[bh];
-            address[] memory ad = sb.addresss;
-            
             // TODO: change the condotion
             if(sb.lastTimeStamp + sb.heirToInterval >= block.timestamp){
                 t_boxHashes[count] = bh;
@@ -256,28 +254,27 @@ contract PecuniaLock is Context, IERC721Receiver {
         }
     }
 
-    function checkUpkeep(/*bytes calldata  checkData */) 
-    public 
-    // view 
-    // override 
-    // returns (bool upkeepNeeded, bytes memory performData) 
+    function checkUpkeep(bytes calldata  /*checkData */) 
+    public  
+    override 
+    returns (bool upkeepNeeded, bytes memory performData) 
     {
         (bytes32[] memory boxes) = getMaturedBoxes();
         bool upkeepNeeded = boxes.length > 0;
-        console.log("checkUpkeep: upkeepNeeded: ", upkeepNeeded);
+        // console.log("checkUpkeep: upkeepNeeded: ", upkeepNeeded);
         bytes memory performData = abi.encode(boxes);
-        console.log("checkUpkeep: after encode: performData");
+        // console.log("checkUpkeep: after encode: performData");
         // TODO remove this
-        performUpkeep(performData);
-        // return (upkeepNeeded, performData);
+        // performUpkeep(performData);
+        return (upkeepNeeded, performData);
     }
 
-    function performUpkeep(bytes memory performData) 
+    function performUpkeep(bytes calldata performData) 
     public 
-    // override 
+    override 
     {
         bytes32[] memory maturedBoxes = abi.decode(performData, (bytes32[]));
-        console.log("performUpkeep: ");
+        // console.log("performUpkeep: ");
         transferAmountToHeirs(maturedBoxes);
     }
 
