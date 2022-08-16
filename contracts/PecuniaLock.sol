@@ -33,19 +33,33 @@ contract PecuniaLock is Context, IERC721Receiver {
         uint256 tokenId
     );
 
-    event Withdraw(
+    event WithdrawSigned(
         address indexed user,
         address indexed to,
         uint amount
     );
+
+    event FundsAdded(
+        uint256 amountAdded, 
+        uint256 newBalance, 
+        address sender
+    );
+
+    event FundsTransferred(
+        uint256 amount,
+        address heir
+    );
+
+    bytes32[] private boxHashes;
 
     struct SafeBox{
         bytes32 boxhash;
         address user;
         mapping(address => uint) heirToBalance;
         mapping(address => uint256) heirToTokenid;
-        mapping(address => uint256) heirToInterval;
-        mapping(address => uint256) lastTimeStamp;
+        uint256 heirToInterval;
+        uint256 lastTimeStamp;
+        mapping(address => bool) withdrawSigned;
         address[] addresss;
     }
 
@@ -85,7 +99,8 @@ contract PecuniaLock is Context, IERC721Receiver {
         bytes32 boxhash,
         uint[8] memory proof,
         uint pswHash,
-        uint allHash
+        uint allHash,
+        uint interval
     ) public {
         SafeBox storage box = boxhash2safebox[boxhash];
 
@@ -104,9 +119,11 @@ contract PecuniaLock is Context, IERC721Receiver {
 
         box.boxhash = boxhash;
         box.user = _msgSender();
+        box.heirToInterval = interval;
+        box.lastTimeStamp = block.timestamp;
 
         user2boxhash[box.user] = boxhash;
-
+        boxHashes.push(boxhash);
         emit Register(boxhash, box.user);
     }
 
@@ -116,7 +133,6 @@ contract PecuniaLock is Context, IERC721Receiver {
         bytes32 boxhash,
         address heirAddr,
         uint amount,
-        uint interval,
         string memory tokenURI
     ) public 
     returns (uint256 tokenId){
@@ -128,9 +144,6 @@ contract PecuniaLock is Context, IERC721Receiver {
         tokenId = heirToken.mint(heirAddr, tokenURI);
         box.heirToTokenid[heirAddr] = tokenId;
 
-        box.heirToInterval[heirAddr] = interval;
-        box.lastTimeStamp[heirAddr] = block.timestamp;
-
         box.addresss.push(heirAddr);
         emit Recharge(boxOwner, heirAddr, amount, tokenId);
     }
@@ -139,7 +152,6 @@ contract PecuniaLock is Context, IERC721Receiver {
     function rechargeWithAddress(
         address boxOwner,
         address heirAddr,
-        uint interval,
         string memory tokenURI
     ) public 
     payable
@@ -147,11 +159,11 @@ contract PecuniaLock is Context, IERC721Receiver {
         bytes32 boxhash = user2boxhash[boxOwner];
         uint amount = msg.value;
         console.log("amount deposited=", amount);
-        tokenId = rechargeWithBoxhash(boxOwner, boxhash, heirAddr, amount, interval, tokenURI);
+        tokenId = rechargeWithBoxhash(boxOwner, boxhash, heirAddr, amount, tokenURI);
     }
 
 
-    function withdraw(
+    function withdrawSignature(
         uint[8] memory proof,
         uint pswHash,
         uint allHash,
@@ -185,31 +197,89 @@ contract PecuniaLock is Context, IERC721Receiver {
 
         heirToken.burn(tokenId);
         usedProof[proof[0]] = true;
-        box.heirToBalance[heir] -= amount;
 
-        payable(heir).transfer(amount);
-
-        emit Withdraw(box.user, heir, amount);
+        box.withdrawSigned[heir] = true;
+        // TODO remove this
+        checkUpkeep();
+        emit WithdrawSigned(box.user, heir, amount);
     }
 
-    // function checkUpkeep(bytes calldata /* checkData */) external view override returns (bool upkeepNeeded, bytes memory /* performData */) {
-    //     (bytes32[] boxes, address[] adds) = getMaturedBoxes();
-    //     upkeepNeeded = boxes.length > 0;
-        
+    function getMaturedBoxes() 
+    public 
+    view 
+    returns(bytes32[] memory)
+    {
+        bytes32[] memory t_boxHashes = new bytes32[](boxHashes.length);
+        uint count = 0;
+        for(uint i=0; i< boxHashes.length; i++){
+            bytes32 bh = boxHashes[i];
+            SafeBox storage sb = boxhash2safebox[bh];
+            address[] memory ad = sb.addresss;
+            
+            // TODO: change the condotion
+            if(sb.lastTimeStamp + sb.heirToInterval >= block.timestamp){
+                t_boxHashes[count] = bh;
+                count++;
+            }
+            
+        }
 
-    //     // upkeepNeeded = (block.timestamp - lastTimeStamp) > interval;
+        if (count != boxHashes.length){
+            assembly{
+                mstore(t_boxHashes, count)
+            }
+        }
+        return t_boxHashes;
+    }
 
-    //     // We don't use the checkData in this example. The checkData is defined when the Upkeep was registered.
-    // }
+    function transferAmountToHeirs(bytes32[] memory maturedBoxes)
+    internal
+    {
+        for(uint i=0; i< maturedBoxes.length; i++){
+            address[] memory ad = boxhash2safebox[maturedBoxes[i]].addresss;
+            for(uint j=0; j< ad.length; j++){
+                if (
+                 boxhash2safebox[maturedBoxes[i]].withdrawSigned[ad[j]] &&
+                 boxhash2safebox[maturedBoxes[i]].lastTimeStamp + boxhash2safebox[maturedBoxes[i]].heirToInterval >= block.timestamp
+                 ){
+                    uint amount = boxhash2safebox[maturedBoxes[i]].heirToBalance[ad[j]];
+                    console.log("paying amt, to:", amount, ad[j]);
+                    bool success = payable(ad[j]).send(amount);
+                    if (success){
+                        boxhash2safebox[maturedBoxes[i]].heirToBalance[ad[j]] = 0;
+                        console.log("Funds Transferred");
+                        emit FundsTransferred(amount, ad[j]);
+                    }
+                    // TODO add else and gas optimization cond
+                }
+            }
+        }
+    }
 
-    // function performUpkeep(bytes calldata /* performData */) external override {
-    //     //We highly recommend revalidating the upkeep in the performUpkeep function
-    //     if ((block.timestamp - lastTimeStamp) > interval ) {
-    //         lastTimeStamp = block.timestamp;
-    //         counter = counter + 1;
-    //     }
-    //     // We don't use the performData in this example. The performData is generated by the Keeper's call to your checkUpkeep function
-    // }
+    function checkUpkeep(/*bytes calldata  checkData */) 
+    public 
+    // view 
+    // override 
+    // returns (bool upkeepNeeded, bytes memory performData) 
+    {
+        (bytes32[] memory boxes) = getMaturedBoxes();
+        bool upkeepNeeded = boxes.length > 0;
+        console.log("checkUpkeep: upkeepNeeded: ", upkeepNeeded);
+        bytes memory performData = abi.encode(boxes);
+        console.log("checkUpkeep: after encode: performData");
+        // TODO remove this
+        performUpkeep(performData);
+        // return (upkeepNeeded, performData);
+    }
+
+    function performUpkeep(bytes memory performData) 
+    public 
+    // override 
+    {
+        bytes32[] memory maturedBoxes = abi.decode(performData, (bytes32[]));
+        console.log("performUpkeep: ");
+        transferAmountToHeirs(maturedBoxes);
+    }
 
     function onERC721Received(address, address, uint256, bytes memory) 
         public 
@@ -218,6 +288,10 @@ contract PecuniaLock is Context, IERC721Receiver {
         returns (bytes4) 
     {
         return this.onERC721Received.selector;
+    }
+
+    receive() external payable {
+    emit FundsAdded(msg.value, address(this).balance, msg.sender);
     }
 
 }

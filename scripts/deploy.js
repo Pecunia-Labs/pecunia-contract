@@ -1,4 +1,5 @@
 const hre = require('hardhat')
+const network = require('hardhat')
 const fs = require('fs')
 const { BigNumber } = require('ethers')
 const snarkjs = require("snarkjs")
@@ -32,22 +33,27 @@ async function main() {
 	let settingUpTokenAddr = '0x0' //hex or int
 	let settingUpAmount = '0' //hex or int
 	let p = await getProof(psw, settingUpTokenAddr, settingUpAmount, accounts);
-	await PecuniaLock.register(p.boxhash, p.proof, p.pswHash, p.allHash)
+	await PecuniaLock.register(p.boxhash, p.proof, p.pswHash, p.allHash, 60)
 	console.log('register done');
 
 	let amountToHeir = m(400, 18) //hex or int
 	await usdt.connect(owner).approve(PecuniaLock.address, amountToHeir)
 	console.log('step 1 approve done')
 
-	const tokenId = await rechargeWithAddress(PecuniaLock, owner, usdt.address, heir.address, amountToHeir, 60, "test")
+	const tokenId = await rechargeWithAddress(PecuniaLock, owner, usdt.address, heir.address, amountToHeir, "test")
 
 	console.log(`tokenId: ${tokenId}`)
+	
+	// console.log(`Moving time...`);
+  	// await network.provider.send("evm_increaseTime", [18000]);
+  	// await network.provider.send("evm_mine");
+  	// console.log(`Time moved by 18000`)
 
 	let tokenAddr = usdt.address //hex or int
 	await approveNFT(heirToken, heir, PecuniaLock.address, s(1))
 	let p2 = await getProof(psw, tokenAddr, s(amountToHeir), accounts)
-	await PecuniaLock.connect(heir).withdraw(p2.proof, p2.pswHash, p2.allHash, owner.address)
-	console.log('withdraw done')
+	await PecuniaLock.connect(heir).withdrawSignature(p2.proof, p2.pswHash, p2.allHash, owner.address)
+	console.log('withdrawSignature done')
 
 }
 
@@ -143,8 +149,19 @@ async function approveNFT(
 	console.log(`Heir token approved`)
   }
 
-async function rechargeWithAddress(PecuniaLock, owner, tokenAddr, heirAddr, amount, interval, tokenuri){
-	const tokenId = await PecuniaLock.connect(owner).rechargeWithAddress(owner.address, heirAddr, s(interval), tokenuri, {value: ethers.utils.parseEther('400')})
+async function moveBlocks(numOfBlocks){
+    console.log("Moving blocks.... ")
+    for (let i =0; i<= numOfBlocks; i++){
+        await network.provider.request({
+            method: "evm_mine",
+            params: [],
+        })
+    }
+    console.log(` Blocks moved by ${numOfBlocks} `)
+}
+
+async function rechargeWithAddress(PecuniaLock, owner, tokenAddr, heirAddr, amount, tokenuri){
+	const tokenId = await PecuniaLock.connect(owner).rechargeWithAddress(owner.address, heirAddr, tokenuri, {value: ethers.utils.parseEther('400')})
 	
 	console.log('step 2 rechargeWithAddress done')
 	return tokenId
