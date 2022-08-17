@@ -4,55 +4,53 @@ const fs = require('fs')
 const { BigNumber } = require('ethers')
 const snarkjs = require("snarkjs")
 
+const HeirToken = JSON.parse(fs.readFileSync("./artifacts/contracts/mock/HeirToken.sol/HeirToken.json"))
+const PecuniaLock = JSON.parse(fs.readFileSync("./artifacts/contracts/PecuniaLock.sol/PecuniaLock.json"));
+
+const PECUNIA_LOCK = '0xc531b9612bB15C0875A359746Fe08DB4576BAdb2';
+const HEIR_TOKEN = '0xEE079838C1Ea65dC7bdc540E1FD41368e36ebEE0';
+
 async function main() {
 	const accounts = await hre.ethers.getSigners()
+	
+	// FOR NEW DEPLOYMENT //
 	const [owner, heir, lawyer] = accounts
-
+	// const owner = accounts[0]
+	console.log(`owner add ${owner.address}`)
 	const PecuniaLockFactory = await ethers.getContractFactory('PecuniaLock')
-	const PecuniaLock = await PecuniaLockFactory.deploy()
-	await PecuniaLock.deployed()
-	console.log('PecuniaLock deployed:', PecuniaLock.address)
-
-	const MockERC20 = await ethers.getContractFactory('MockERC20')
-    const usdt = await MockERC20.deploy('MockUSDT', 'USDT')
-    await usdt.deployed()
-	console.log('USDT deployed:', usdt.address);
-
+	const pecunia_lock = await PecuniaLockFactory.deploy()
+	await pecunia_lock.deployed()
+	console.log('PecuniaLock deployed:', pecunia_lock.address)
 	const heirTokenFactory = await ethers.getContractFactory('HeirToken');
-	const heirToken = await heirTokenFactory.attach(await PecuniaLock.heirToken());
-	console.log('Heir Token:', heirToken.address);
+	const heir_token = await heirTokenFactory.attach(await pecunia_lock.heirToken());
+	console.log('Heir Token:', heir_token.address);
 
-	await usdt.mint(accounts[0].address, m(1000, 18))
-	console.log('usdt mint to accounts[0]', d(await usdt.balanceOf(accounts[0].address), 18))
-	await usdt.mint(accounts[1].address, m(1000, 18))
-	console.log('usdt mint to accounts[1]', d(await usdt.balanceOf(accounts[1].address), 18))
-	await usdt.mint(accounts[2].address, m(1000, 18))
-	console.log('usdt mint to accounts[2]', d(await usdt.balanceOf(accounts[2].address), 18))
+	// TO USE ALREADY DEPLOYED //
+	// const owner = accounts[0];
+	// console.log(`owner add ${owner.address}`)
+	// let pecunia_lock = new ethers.Contract(PECUNIA_LOCK, PecuniaLock.abi, owner);
+  	// let heir_token = new ethers.Contract(HEIR_TOKEN, HeirToken.abi, owner);
 
 	let psw = 'abc123'
-	let settingUpTokenAddr = '0x0' //hex or int
 	let settingUpAmount = '0' //hex or int
-	let p = await getProof(psw, settingUpTokenAddr, settingUpAmount, accounts);
-	await PecuniaLock.register(p.boxhash, p.proof, p.pswHash, p.allHash, 60)
+	let p = await getProof(psw, settingUpAmount, owner);
+	await pecunia_lock.register(p.boxhash, p.proof, p.pswHash, p.allHash, 60, {gasLimit: 1e6})
 	console.log('register done');
 
-	let amountToHeir = m(400, 18) //hex or int
-	await usdt.connect(owner).approve(PecuniaLock.address, amountToHeir)
-	console.log('step 1 approve done')
+	let amountToHeir = ethers.utils.parseEther("0.01") //hex or int
 
-	const tokenId = await rechargeWithAddress(PecuniaLock, owner, usdt.address, heir.address, amountToHeir, "test")
-
-	console.log(`tokenId: ${tokenId}`)
+	const tokenId = await rechargeWithAddress(pecunia_lock, owner, heir.address, amountToHeir, "test")
+	// const tokenId = await rechargeWithAddress(pecunia_lock, owner, '0x3e60B11022238Af208D4FAEe9192dAEE46D225a6', amountToHeir, "test")
+	// console.log(`tokenId: ${tokenId}`)
 	
 	// console.log(`Moving time...`);
   	// await network.provider.send("evm_increaseTime", [18000]);
   	// await network.provider.send("evm_mine");
   	// console.log(`Time moved by 18000`)
 
-	let tokenAddr = usdt.address //hex or int
-	await approveNFT(heirToken, heir, PecuniaLock.address, s(1))
-	let p2 = await getProof(psw, tokenAddr, s(amountToHeir), accounts)
-	await PecuniaLock.connect(heir).withdrawSignature(p2.proof, p2.pswHash, p2.allHash, owner.address)
+	await approveNFT(heir_token, heir, pecunia_lock.address, s(1))
+	let p2 = await getProof(psw, s(amountToHeir), owner)
+	await pecunia_lock.connect(heir).withdrawSignature(p2.proof, p2.pswHash, p2.allHash, owner.address)
 	console.log('withdrawSignature done')
 
 }
@@ -98,7 +96,7 @@ function s(bn) {
 	return bn.toString()
 }
 
-async function getProof(psw, tokenAddr, amount, accounts) {
+async function getProof(psw, amount, user) {
 
 	let input = [stringToHex(psw), amount]
 	console.log('input', input)
@@ -116,9 +114,9 @@ async function getProof(psw, tokenAddr, amount, accounts) {
 
 		let pswHash = data.publicSignals[0]
 		let allHash = data.publicSignals[2]
-		// TODO remove aacounts and add owner address
-		let boxhash = ethers.utils.solidityKeccak256(['uint256', 'address'], [pswHash, accounts[0].address])
-
+		// console.log(`getProof: user add ${user.address}`)
+		let boxhash = ethers.utils.solidityKeccak256(['uint256', 'address'], [pswHash, user.address])
+		
 		let proof = [
 			BigNumber.from(data.proof.pi_a[0]).toHexString(),
 			BigNumber.from(data.proof.pi_a[1]).toHexString(),
@@ -160,8 +158,8 @@ async function moveBlocks(numOfBlocks){
     console.log(` Blocks moved by ${numOfBlocks} `)
 }
 
-async function rechargeWithAddress(PecuniaLock, owner, tokenAddr, heirAddr, amount, tokenuri){
-	const tokenId = await PecuniaLock.connect(owner).rechargeWithAddress(owner.address, heirAddr, tokenuri, {value: ethers.utils.parseEther('400')})
+async function rechargeWithAddress(PecuniaLock, owner, heirAddr, amount, tokenuri){
+	const tokenId = await PecuniaLock.connect(owner).rechargeWithAddress(owner.address, heirAddr, tokenuri, {value: amount})
 	
 	console.log('step 2 rechargeWithAddress done')
 	return tokenId
