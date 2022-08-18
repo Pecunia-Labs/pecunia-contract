@@ -8,35 +8,60 @@ async function main() {
 	const accounts = await hre.ethers.getSigners()
 	
 	// FOR NEW DEPLOYMENT //
-	const [owner, heir, lawyer] = accounts
-	console.log(`owner add ${owner.address}`)
-	const PecuniaLockFactory = await ethers.getContractFactory('PecuniaLock')
+	const [deployer, owner, heir] = accounts
+	console.log(`owner address ${owner.address}`)
+    console.log(`heir address ${heir.address}`)
+	
+    const PecuniaLockFactory = await ethers.getContractFactory('PecuniaLock')
 	const pecunia_lock = await PecuniaLockFactory.deploy()
 	await pecunia_lock.deployed()
 	console.log('PecuniaLock deployed:', pecunia_lock.address)
-	const heirTokenFactory = await ethers.getContractFactory('HeirToken');
+	
+    const heirTokenFactory = await ethers.getContractFactory('HeirToken');
 	const heir_token = await heirTokenFactory.attach(await pecunia_lock.heirToken());
 	console.log('Heir Token:', heir_token.address);
+    
+    const ownerNftFactory = await ethers.getContractFactory('OwnerNFT');
+    const owner_token = await ownerNftFactory.deploy();
+    await owner_token.deployed();
+    console.log(`Owner NFTs deployed at: ${owner_token.address}`);
 
+    const onft_txn = await owner_token.connect(owner).mint(owner.address, "abs");
+    console.log(s(onft_txn.value));
+    const onft_tokenId = (s(onft_txn.value))
+
+    await printNftOwner(owner_token, onft_tokenId, "owner nft") 
 	let psw = 'abc123'
 	let settingUpAmount = '0' //hex or int
 	let interval = '120'
 	let p = await getProof(psw, settingUpAmount, owner);
-	await pecunia_lock.register(p.boxhash, p.proof, p.pswHash, p.allHash, interval, {gasLimit: 1e6})
+	await pecunia_lock.connect(owner).register(p.boxhash, p.proof, p.pswHash, p.allHash, interval, {gasLimit: 1e6})
 	console.log('register done');
 
-	let amountToHeir = ethers.utils.parseEther("0.01") //hex or int
-
-	const tokenId = await rechargeWithAddress(pecunia_lock, owner, heir.address, amountToHeir, "test")
-	console.log(`tokenId: ${tokenId}`)
+    await printBalances(owner, pecunia_lock, heir)
+    await printNftOwner(owner_token, onft_tokenId, "owner nft") 
+    let owner_token_ids = [onft_tokenId]
+	let amountToHeir = ethers.utils.parseEther("1") //hex or int
+    await approveNFT(owner_token, owner, pecunia_lock.address, onft_tokenId)
+	const tokenId = await rechargeWithAddress(pecunia_lock, owner, heir.address, amountToHeir, owner_token, owner_token_ids)
+	console.log("HEIR token id")
+    // console.log(tokenId)
+    await printBalances(owner, pecunia_lock, heir)
+    await printNftOwner(owner_token, onft_tokenId, "owner nft") 
 	
-	
-
 	await approveNFT(heir_token, heir, pecunia_lock.address, s(1))
 	let p2 = await getProof(psw, s(amountToHeir), owner)
 	await pecunia_lock.connect(heir).withdrawSignature(p2.proof, p2.pswHash, p2.allHash, owner.address, {gasLimit: 1e7})
 	console.log('withdrawSignature done')
+    await printBalances(owner, pecunia_lock, heir)
+    await printNftOwner(owner_token, onft_tokenId, "owner nft") 
 
+    const t_boxHashes = await pecunia_lock.getMaturedBoxes()
+    console.log(`getMaturedBoxes: boxHashes`)
+    console.log(t_boxHashes)
+    const txn = await pecunia_lock.transferAmountToHeirs(t_boxHashes);
+    await printBalances(owner, pecunia_lock, heir)
+    await printNftOwner(owner_token, onft_tokenId, "owner nft") 
 }
 
 function stringToHex(string) {
@@ -120,6 +145,30 @@ async function getProof(psw, amount, user) {
 	}
 }
 
+async function printBalances(
+    owner,
+    pecunia_lock,
+    heir
+){
+    const owner_bal = await ethers.provider.getBalance(owner.address);
+    console.log(`owner balance: ${d(owner_bal, 18)}`)
+
+    const pl_bal = await ethers.provider.getBalance(pecunia_lock.address);
+    console.log(`pecunia_lock balance: ${d(pl_bal, 18)}`)
+
+    const heir_bal = await ethers.provider.getBalance(heir.address);
+    console.log(`heir balance: ${d(heir_bal, 18)}`)
+}
+
+async function printNftOwner(
+    nft_token,
+    tokenId,
+    type
+){
+    const o = await nft_token.ownerOf(tokenId)
+    console.log(`Owner of ${type} NFT: ${o}`)
+}
+
 
 async function approveNFT(
     heirToken,
@@ -128,7 +177,7 @@ async function approveNFT(
     tokenId
   ){
     await heirToken.connect(user).approve(to, tokenId);
-	console.log(`Heir token approved`)
+	console.log(`NFT token approved`)
   }
 
 async function moveBlocks(numOfBlocks){
@@ -142,8 +191,8 @@ async function moveBlocks(numOfBlocks){
     console.log(` Blocks moved by ${numOfBlocks} `)
 }
 
-async function rechargeWithAddress(PecuniaLock, owner, heirAddr, amount, tokenuri){
-	const tokenId = await PecuniaLock.connect(owner).rechargeWithAddress(owner.address, heirAddr, tokenuri, {value: amount})
+async function rechargeWithAddress(PecuniaLock, owner, heirAddr, amount,  owner_token, owner_token_ids){
+	const tokenId = await PecuniaLock.connect(owner).rechargeWithAddress(owner.address, heirAddr, owner_token.address, ["0"], {value: amount})
 	
 	console.log('step 2 rechargeWithAddress done')
 	return tokenId
