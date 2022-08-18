@@ -346,7 +346,7 @@ contract PecuniaLock is Context, IERC721Receiver, KeeperCompatibleInterface {
         for (uint256 i = 0; i < boxHashes.length; i++) {
             bytes32 bh = boxHashes[i];
             SafeBox storage sb = boxhash2safebox[bh];
-            if (block.timestamp - sb.lastTimeStamp <= sb.heirToInterval) {
+            if (block.timestamp - sb.lastTimeStamp >= sb.heirToInterval) {
                 t_boxHashes[count] = bh;
                 count++;
             }
@@ -363,14 +363,14 @@ contract PecuniaLock is Context, IERC721Receiver, KeeperCompatibleInterface {
      * @notice Transfer amount to heir if he has signed the will and will has matured
      * @param maturedBoxes Wills/Boxes which have matured
      */
-    function transferAmountToHeirs(bytes32[] memory maturedBoxes) public {
+    function _transferAmountToHeirs(bytes32[] memory maturedBoxes) internal {
         for (uint256 i = 0; i < maturedBoxes.length; i++) {
             address[] memory ad = boxhash2safebox[maturedBoxes[i]].addresss;
             for (uint256 j = 0; j < ad.length; j++) {
                 if (
                     boxhash2safebox[maturedBoxes[i]].withdrawSigned[ad[j]] &&
                     block.timestamp -
-                        boxhash2safebox[maturedBoxes[i]].lastTimeStamp <=
+                        boxhash2safebox[maturedBoxes[i]].lastTimeStamp >=
                     boxhash2safebox[maturedBoxes[i]].heirToInterval
                 ) {
                     uint256 amount = boxhash2safebox[maturedBoxes[i]]
@@ -441,7 +441,7 @@ contract PecuniaLock is Context, IERC721Receiver, KeeperCompatibleInterface {
      */
     function performUpkeep(bytes calldata performData) external override {
         bytes32[] memory maturedBoxes = abi.decode(performData, (bytes32[]));
-        transferAmountToHeirs(maturedBoxes);
+        _transferAmountToHeirs(maturedBoxes);
     }
 
     // Chainlink keeper funciton ends

@@ -59,7 +59,7 @@ async function main() {
     const t_boxHashes = await pecunia_lock.getMaturedBoxes()
     console.log(`getMaturedBoxes: boxHashes`)
     console.log(t_boxHashes)
-    const txn = await pecunia_lock.transferAmountToHeirs(t_boxHashes);
+    // const txn = await pecunia_lock.transferAmountToHeirs(t_boxHashes);
     await printBalances(owner, pecunia_lock, heir)
     await printNftOwner(owner_token, onft_tokenId, "owner nft") 
 }
