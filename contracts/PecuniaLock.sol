@@ -124,6 +124,7 @@ contract PecuniaLock is Context, IERC721Receiver, KeeperCompatibleInterface {
             ),
             "PecuniaLock::register: verifyProof fail"
         );
+        require(interval > 0, "PecuniaLock::register: interval cannot be zero");
 
         box.boxhash = boxhash;
         box.user = _msgSender();
@@ -150,7 +151,16 @@ contract PecuniaLock is Context, IERC721Receiver, KeeperCompatibleInterface {
         address heirAddr,
         uint256 amount,
         string memory tokenURI
-    ) public returns (uint256 tokenId) {
+    ) public payable returns (uint256 tokenId) {
+        require(
+            heirAddr != address(0),
+            "PecuniaLock::rechargeWithBoxhash: Heir cannot be 0 address"
+        );
+        require(
+            boxOwner != heirAddr,
+            "PecuniaLock::rechargeWithBoxhash: Owner cannot be heir"
+        );
+
         require(
             amount > 0,
             "PecuniaLock::rechargeWithBoxhash: Insufficient Amount send"
@@ -181,8 +191,24 @@ contract PecuniaLock is Context, IERC721Receiver, KeeperCompatibleInterface {
         address heirAddr,
         string memory tokenURI
     ) public payable returns (uint256 tokenId) {
+        require(
+            heirAddr != address(0),
+            "PecuniaLock::rechargeWithAddress: Heir cannot be 0 address"
+        );
+        require(
+            boxOwner != heirAddr,
+            "PecuniaLock::rechargeWithAddress: Owner cannot be heir"
+        );
+
         bytes32 boxhash = user2boxhash[boxOwner];
+        require(
+            boxhash != bytes32(0),
+            "PecuniaLock::rechargeWithAddress: safebox not register yet"
+        );
+
         uint256 amount = msg.value;
+        require(amount > 0, "Amount sent cannot be 0");
+
         console.log("amount deposited=", amount);
         tokenId = rechargeWithBoxhash(
             boxOwner,
@@ -207,22 +233,29 @@ contract PecuniaLock is Context, IERC721Receiver, KeeperCompatibleInterface {
         address boxOwner
     ) public {
         address heir = msg.sender;
-        require(!usedProof[proof[0]], "PecuniaLock::withdraw: proof used");
+        require(
+            heir != boxOwner,
+            "PecuniaLock::withdrawSignature: Owner cannot withdraw amount"
+        );
+        require(
+            !usedProof[proof[0]],
+            "PecuniaLock::withdrawSignature: proof used"
+        );
 
         bytes32 boxhash = user2boxhash[boxOwner];
         require(
             keccak256(abi.encodePacked(pswHash, boxOwner)) == boxhash,
-            "PecuniaLock::withdraw: pswHash error"
+            "PecuniaLock::withdrawSignature: pswHash error"
         );
         require(
             heirIsValid(boxhash, heir),
-            "PecuniaLock::withdraw: heir not valid"
+            "PecuniaLock::withdrawSignature: heir not valid"
         );
 
         SafeBox storage box = boxhash2safebox[boxhash];
         require(
             box.boxhash != bytes32(0),
-            "PecuniaLock::withdraw: safebox not register yet"
+            "PecuniaLock::withdrawSignature: safebox not register yet"
         );
 
         uint256 amount = box.heirToBalance[heir];
@@ -461,6 +494,14 @@ contract PecuniaLock is Context, IERC721Receiver, KeeperCompatibleInterface {
             boxhash2safebox[boxhash].heirToInterval,
             boxhash2safebox[boxhash].lastTimeStamp
         );
+    }
+
+    /**
+     * @notice get time left for the will/box to expire/mature
+     */
+    function getTimeLeftFromOwner(address owner) public view returns (uint256) {
+        return (block.timestamp -
+            boxhash2safebox[user2boxhash[owner]].lastTimeStamp);
     }
 
     /**
