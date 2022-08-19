@@ -20,11 +20,16 @@ contract PecuniaLock is Context, IERC721Receiver, KeeperCompatibleInterface {
 
     event Register(bytes32 indexed boxhash, address indexed user);
 
-    event Recharge(
+    event RechargeMatic(
         address indexed sender,
         address indexed heirAddress,
-        uint256 amount,
-        uint256 tokenId
+        uint256 amount
+    );
+
+    event RechargeNft(
+        address indexed sender,
+        address indexed heirAddress,
+        address nftAddress
     );
 
     event WithdrawSigned(
@@ -48,6 +53,8 @@ contract PecuniaLock is Context, IERC721Receiver, KeeperCompatibleInterface {
         uint256 lastTimeStamp;
         mapping(address => bool) withdrawSigned;
         address[] addresss;
+        mapping(address => uint256[]) heirToNfts;
+        address nftAddress;
     }
 
     mapping(bytes32 => SafeBox) public boxhash2safebox;
@@ -137,60 +144,23 @@ contract PecuniaLock is Context, IERC721Receiver, KeeperCompatibleInterface {
     }
 
     /**
-     * @notice assign funds to heir using boxhash
-     * @param boxOwner address of box owner
-     * @param boxhash the hash of box
-     * @param heirAddr address of the heir
-     * @param amount amount of matic assigned to heir
-     * @param tokenURI token uri
-     * @return tokenId of the HEIR NFT
-     */
-    function rechargeWithBoxhash(
-        address boxOwner,
-        bytes32 boxhash,
-        address heirAddr,
-        uint256 amount,
-        string memory tokenURI
-    ) public payable returns (uint256 tokenId) {
-        require(
-            heirAddr != address(0),
-            "PecuniaLock::rechargeWithBoxhash: Heir cannot be 0 address"
-        );
-        require(
-            boxOwner != heirAddr,
-            "PecuniaLock::rechargeWithBoxhash: Owner cannot be heir"
-        );
-
-        require(
-            amount > 0,
-            "PecuniaLock::rechargeWithBoxhash: Insufficient Amount send"
-        );
-        SafeBox storage box = boxhash2safebox[boxhash];
-        require(
-            box.boxhash != bytes32(0),
-            "PecuniaLock::rechargeWithBoxhash: safebox not register yet"
-        );
-        box.heirToBalance[heirAddr] += amount;
-
-        tokenId = heirToken.mint(heirAddr, tokenURI);
-        box.heirToTokenid[heirAddr] = tokenId;
-
-        box.addresss.push(heirAddr);
-        emit Recharge(boxOwner, heirAddr, amount, tokenId);
-    }
-
-    /**
-     * @notice assign funds to heir using address of owner
+     * @notice assign funds and nfts to heir using address of owner
      * @param boxOwner address of box owner
      * @param heirAddr address of the heir
-     * @param tokenURI token uri
+     * @param nftAddr address of the nft
+     * @param nftTokenIds token ids
      * @return tokenId of the HEIR NFT
      */
     function rechargeWithAddress(
         address boxOwner,
         address heirAddr,
-        string memory tokenURI
-    ) public payable returns (uint256 tokenId) {
+        address nftAddr,
+        uint256[] memory nftTokenIds
+    ) external payable returns (uint256 tokenId) {
+        require(
+            msg.sender == boxOwner,
+            "PecuniaLock::rechargeWithAddress: only owner can assign funds to heirs"
+        );
         require(
             heirAddr != address(0),
             "PecuniaLock::rechargeWithAddress: Heir cannot be 0 address"
@@ -199,24 +169,105 @@ contract PecuniaLock is Context, IERC721Receiver, KeeperCompatibleInterface {
             boxOwner != heirAddr,
             "PecuniaLock::rechargeWithAddress: Owner cannot be heir"
         );
+        uint256 amount = msg.value;
+        tokenId = _rechargeWithAddress(
+            boxOwner,
+            heirAddr,
+            amount,
+            nftAddr,
+            nftTokenIds
+        );
+        return tokenId;
+    }
 
+    /**
+     * @notice internal funciton to assign funds and nfts to heir using address of owner
+     * @param boxOwner address of box owner
+     * @param heirAddr address of the heir
+     * @param nftAddr address of the nft
+     * @param nftTokenIds token ids
+     * @return tokenId of the HEIR NFT
+     */
+    function _rechargeWithAddress(
+        address boxOwner,
+        address heirAddr,
+        uint256 amount,
+        address nftAddr,
+        uint256[] memory nftTokenIds
+    ) internal returns (uint256 tokenId) {
         bytes32 boxhash = user2boxhash[boxOwner];
         require(
             boxhash != bytes32(0),
             "PecuniaLock::rechargeWithAddress: safebox not register yet"
         );
 
-        uint256 amount = msg.value;
-        require(amount > 0, "Amount sent cannot be 0");
+        SafeBox storage box = boxhash2safebox[boxhash];
+        if (amount > 0) {
+            _rechargeOfMatic(boxOwner, boxhash, heirAddr, amount);
+            console.log("amount deposited=", amount);
+        }
+        if (nftAddr != address(0) && nftTokenIds.length >= 0) {
+            if (box.nftAddress == address(0)) {
+                box.nftAddress = nftAddr;
+            }
+            _rechargeOfNft(boxOwner, boxhash, heirAddr, nftAddr, nftTokenIds);
+            console.log("NFTs deposited");
+        }
 
-        console.log("amount deposited=", amount);
-        tokenId = rechargeWithBoxhash(
-            boxOwner,
-            boxhash,
-            heirAddr,
-            amount,
-            tokenURI
-        );
+        tokenId = heirToken.mint(heirAddr, "");
+        box.heirToTokenid[heirAddr] = tokenId;
+        box.addresss.push(heirAddr);
+        return tokenId;
+    }
+
+    /**
+     * @notice assign funds to heir using boxhash
+     * @param boxOwner address of box owner
+     * @param boxhash the hash of box
+     * @param heirAddr address of the heir
+     * @param amount amount of matic assigned to heir
+     */
+    function _rechargeOfMatic(
+        address boxOwner,
+        bytes32 boxhash,
+        address heirAddr,
+        uint256 amount
+    ) internal {
+        SafeBox storage box = boxhash2safebox[boxhash];
+        box.heirToBalance[heirAddr] += amount;
+        emit RechargeMatic(boxOwner, heirAddr, amount);
+    }
+
+    /**
+     * @notice assign nfts to heir using boxhash
+     * @param boxOwner address of box owner
+     * @param boxhash the hash of box
+     * @param heirAddr address of the heir
+     * @param nftAddr address of nft
+     * @param nftTokenIds token ids
+     */
+    function _rechargeOfNft(
+        address boxOwner,
+        bytes32 boxhash,
+        address heirAddr,
+        address nftAddr,
+        uint256[] memory nftTokenIds
+    ) internal {
+        SafeBox storage box = boxhash2safebox[boxhash];
+
+        for (uint256 i = 0; i < nftTokenIds.length; i++) {
+            require(
+                IERC721(nftAddr).getApproved(nftTokenIds[i]) == address(this),
+                "PecuniaLock::_rechargeOfNft: NFT approval not set"
+            );
+            IERC721(nftAddr).safeTransferFrom(
+                boxOwner,
+                address(this),
+                nftTokenIds[i]
+            );
+            box.heirToNfts[heirAddr].push(nftTokenIds[i]);
+        }
+        emit RechargeNft(boxOwner, heirAddr, nftAddr);
     }
 
     /**
@@ -312,7 +363,7 @@ contract PecuniaLock is Context, IERC721Receiver, KeeperCompatibleInterface {
      * @notice Transfer amount to heir if he has signed the will and will has matured
      * @param maturedBoxes Wills/Boxes which have matured
      */
-    function transferAmountToHeirs(bytes32[] memory maturedBoxes) internal {
+    function _transferAmountToHeirs(bytes32[] memory maturedBoxes) internal {
         for (uint256 i = 0; i < maturedBoxes.length; i++) {
             address[] memory ad = boxhash2safebox[maturedBoxes[i]].addresss;
             for (uint256 j = 0; j < ad.length; j++) {
@@ -324,15 +375,41 @@ contract PecuniaLock is Context, IERC721Receiver, KeeperCompatibleInterface {
                 ) {
                     uint256 amount = boxhash2safebox[maturedBoxes[i]]
                         .heirToBalance[ad[j]];
-                    console.log("paying amt, to:", amount, ad[j]);
-                    bool success = payable(ad[j]).send(amount);
-                    if (success) {
-                        boxhash2safebox[maturedBoxes[i]].heirToBalance[
-                            ad[j]
-                        ] = 0;
-                        console.log("Funds Transferred");
-                        emit FundsTransferred(amount, ad[j]);
+                    if (amount > 0) {
+                        console.log("paying amt, to:", amount, ad[j]);
+                        bool success = payable(ad[j]).send(amount);
+                        if (success) {
+                            boxhash2safebox[maturedBoxes[i]].heirToBalance[
+                                ad[j]
+                            ] = 0;
+                            console.log("Funds Transferred");
+                            emit FundsTransferred(amount, ad[j]);
+                        }
                     }
+                    if (
+                        boxhash2safebox[maturedBoxes[i]].nftAddress !=
+                        address(0)
+                    ) {
+                        for (
+                            uint256 k = 0;
+                            k <
+                            boxhash2safebox[maturedBoxes[i]]
+                                .heirToNfts[ad[j]]
+                                .length;
+                            k++
+                        ) {
+                            IERC721(boxhash2safebox[maturedBoxes[i]].nftAddress)
+                                .safeTransferFrom(
+                                    address(this),
+                                    ad[j],
+                                    boxhash2safebox[maturedBoxes[i]].heirToNfts[
+                                        ad[j]
+                                    ][k]
+                                );
+                            console.log("Owner NFT transffered");
+                        }
+                    }
+
                     // TODO add else and gas optimization cond
                 }
             }
@@ -364,7 +441,7 @@ contract PecuniaLock is Context, IERC721Receiver, KeeperCompatibleInterface {
      */
     function performUpkeep(bytes calldata performData) external override {
         bytes32[] memory maturedBoxes = abi.decode(performData, (bytes32[]));
-        transferAmountToHeirs(maturedBoxes);
+        _transferAmountToHeirs(maturedBoxes);
     }
 
     // Chainlink keeper funciton ends
