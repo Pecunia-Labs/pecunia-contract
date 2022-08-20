@@ -30,18 +30,23 @@ async function main() {
     console.log(s(onft_txn.value));
     const onft_tokenId = (s(onft_txn.value))
 
+    let owner_token_ids = [onft_tokenId]
+	let amountToHeir = ethers.utils.parseEther("1") //hex or int
+
+    //REGISTRATION OF OWNER
     await printNftOwner(owner_token, onft_tokenId, "owner nft") 
 	let psw = 'abc123'
 	let settingUpAmount = '0' //hex or int
 	let interval = '120'
-	let p = await getProof(psw, settingUpAmount, owner);
+    
+	let p = await getProof(psw, settingUpAmount, owner, "0x00");
 	await pecunia_lock.connect(owner).register(p.boxhash, p.proof, p.pswHash, p.allHash, interval, {gasLimit: 1e6})
 	console.log('register done');
 
     await printBalances(owner, pecunia_lock, heir)
     await printNftOwner(owner_token, onft_tokenId, "owner nft") 
-    let owner_token_ids = [onft_tokenId]
-	let amountToHeir = ethers.utils.parseEther("1") //hex or int
+    
+    //OWNER DEDICATES FUNDS TO HEIR AND TRANSFERS THEM TO SMART CONTRACTS
     await approveNFT(owner_token, owner, pecunia_lock.address, onft_tokenId)
 	const tokenId = await rechargeWithAddress(pecunia_lock, owner, heir.address, amountToHeir, owner_token, owner_token_ids)
 	console.log("HEIR token id")
@@ -49,13 +54,19 @@ async function main() {
     await printBalances(owner, pecunia_lock, heir)
     await printNftOwner(owner_token, onft_tokenId, "owner nft") 
 	
+
+    //HEIR SIGNS THE WITHDRAW SIGNATURE NECESSARY FOR AMOUNT TRANSFER AFTER INTERVAL EXPIRES
 	await approveNFT(heir_token, heir, pecunia_lock.address, s(1))
-	let p2 = await getProof(psw, s(amountToHeir), owner)
+    let combined_token_ids = combineArrayElementsToHex(owner_token_ids)
+    console.log(`combined_token_ids: ${combined_token_ids}`)
+	let p2 = await getProof(psw, s(amountToHeir), owner, owner_token.address)
 	await pecunia_lock.connect(heir).withdrawSignature(p2.proof, p2.pswHash, p2.allHash, owner.address, {gasLimit: 1e7})
 	console.log('withdrawSignature done')
     await printBalances(owner, pecunia_lock, heir)
     await printNftOwner(owner_token, onft_tokenId, "owner nft") 
 
+
+    //MOCK CHAINLINK KEEPER
     const t_boxHashes = await pecunia_lock.getMaturedBoxes()
     console.log(`getMaturedBoxes: boxHashes`)
     console.log(t_boxHashes)
@@ -105,24 +116,39 @@ function s(bn) {
 	return bn.toString()
 }
 
-async function getProof(psw, amount, user) {
+function combineArrayElementsToHex(a){
+    let strComb = '';
+    for(let i=0;i<a.length;i++){
+        if(i!= a.length -1){
+            let t = a[i].toString() + '_'
+            strComb += t
+        }
+        else{
+            strComb += a[i].toString()
+        } 
+    }
+    let combHash = ethers.utils.solidityKeccak256(['string'], [strComb])
+    return combHash
+}
 
-	let input = [stringToHex(psw), amount]
+async function getProof(psw, amount, user, nftAddr) {
+
+	let input = [stringToHex(psw), amount, nftAddr]
 	console.log('input', input)
 
-	let data = await snarkjs.groth16.fullProve({in:input}, "./zk/new_circuit/circuit_js/circuit.wasm", "./zk/new_circuit/circuit_0001.zkey")
+	let data = await snarkjs.groth16.fullProve({in:input}, "./zk/new_circuit3/circuit_js/circuit.wasm", "./zk/new_circuit3/circuit_0001.zkey")
 
 	// console.log("pswHash: ", data.publicSignals[0])
 	console.log(JSON.stringify(data))
 
-	const vKey = JSON.parse(fs.readFileSync("./zk/new_circuit/verification_key.json"))
+	const vKey = JSON.parse(fs.readFileSync("./zk/new_circuit3/verification_key.json"))
 	const res = await snarkjs.groth16.verify(vKey, data.publicSignals, data.proof)
 
 	if (res === true) {
 		console.log("Verification OK")
 
-		let pswHash = data.publicSignals[0]
-		let allHash = data.publicSignals[2]
+		let pswHash = data.publicSignals[0] 
+		let allHash = data.publicSignals[3]
 		// console.log(`getProof: user add ${user.address}`)
 		let boxhash = ethers.utils.solidityKeccak256(['uint256', 'address'], [pswHash, user.address])
 

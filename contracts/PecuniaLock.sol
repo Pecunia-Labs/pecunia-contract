@@ -127,7 +127,7 @@ contract PecuniaLock is Context, IERC721Receiver, KeeperCompatibleInterface {
                 [proof[0], proof[1]],
                 [[proof[2], proof[3]], [proof[4], proof[5]]],
                 [proof[6], proof[7]],
-                [pswHash, 0, allHash]
+                [pswHash, 0, uint160(0x00), allHash]
             ),
             "PecuniaLock::register: verifyProof fail"
         );
@@ -311,13 +311,13 @@ contract PecuniaLock is Context, IERC721Receiver, KeeperCompatibleInterface {
 
         uint256 amount = box.heirToBalance[heir];
         console.log("amount withdrawn", amount);
-
+        
         require(
             verifier.verifyProof(
                 [proof[0], proof[1]],
                 [[proof[2], proof[3]], [proof[4], proof[5]]],
                 [proof[6], proof[7]],
-                [pswHash, amount, allHash]
+                [pswHash, amount, uint160(box.nftAddress), allHash]
             ),
             "PecuniaLock::withdraw: verifyProof fail"
         );
