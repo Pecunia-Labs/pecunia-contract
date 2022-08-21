@@ -7,14 +7,15 @@ import Web3Modal from 'web3modal';
 
 import { ABI, NFT_ABI, NFTCONTRACT_ADDRESS, CONTRACT_ADDRESS } from "../contractdata/config";
 
-function Navbar({ setETHAddress, setSequenceWallet, setContractHeir, setContractNFT }) {
+function Navbar({ setETHAddress, setSequenceWallet, setContractHeir, setContractNFT, setEthProvider }) {
   const changePage = useNavigate();
 
   const openMetaMask = async () => {
     const web3Modal = new Web3Modal();
     const connection = await web3Modal.connect();
     const provider = new ethers.providers.Web3Provider(connection);  
-
+    setEthProvider(provider);
+    
     const signer = provider.getSigner();
     const address = await signer.getAddress();
     setETHAddress(address);
@@ -35,7 +36,10 @@ function Navbar({ setETHAddress, setSequenceWallet, setContractHeir, setContract
 
     await wallet.connect();
     setSequenceWallet(wallet);
-    const signer = wallet.getSigner()
+    const provider = wallet.getProvider();
+    setEthProvider(provider);
+
+    const signer = wallet.getSigner();
     const contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, signer);
     setContractHeir(contract);
 

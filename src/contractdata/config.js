@@ -1,5 +1,5 @@
-export const CONTRACT_ADDRESS = "0x51ac291780C5b436ad0ee2c00d9beb23B82628Fb";
-export const NFTCONTRACT_ADDRESS = "0xB8875Fa164291955511dF960b9B15A8d416f34B7";
+export const CONTRACT_ADDRESS = "0x8360467F709157773CA12383d01989a83c0409fe";
+export const NFTCONTRACT_ADDRESS = "0x25Ba5F49389777Cd191d2dC6236AD7c1da4A4f2D";
 export const NFT_ABI = [
 	{
 		"inputs": [],
@@ -628,6 +628,45 @@ export const ABI = [
         "internalType": "bytes",
         "name": "performData",
         "type": "bytes"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "gb",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "gb1",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "gb2",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
       }
     ],
     "stateMutability": "view",
