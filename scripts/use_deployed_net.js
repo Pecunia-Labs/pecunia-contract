@@ -7,8 +7,8 @@ const snarkjs = require("snarkjs")
 const HeirToken = JSON.parse(fs.readFileSync("./artifacts/contracts/mock/HeirToken.sol/HeirToken.json"))
 const PecuniaLock = JSON.parse(fs.readFileSync("./artifacts/contracts/PecuniaLock.sol/PecuniaLock.json"));
 
-const PECUNIA_LOCK = '0x63BA660352615d98d52d41a10D44ceeA06d00100';
-const HEIR_TOKEN = '0xB8A600C231612960f23b13587d8e259e9C18AFce';
+const PECUNIA_LOCK = '0x8360467F709157773CA12383d01989a83c0409fe';
+const HEIR_TOKEN = '0x25Ba5F49389777Cd191d2dC6236AD7c1da4A4f2D';
 
 async function main() {
 	const accounts = await hre.ethers.getSigners()
@@ -27,19 +27,21 @@ async function main() {
 	// console.log('register done');
 
 	let amountToHeir = ethers.utils.parseEther("0.01") //hex or int
-
-	// const tokenId = await rechargeWithAddress(pecunia_lock, owner, heir.address, amountToHeir, "test")
-	// const tokenId = await rechargeWithAddress(pecunia_lock, owner, '0x3e60B11022238Af208D4FAEe9192dAEE46D225a6', amountToHeir, "test")
-	// console.log(`tokenId: ${tokenId}`)
+	// let owner_token_ids = []
+	// const txn = await rechargeWithAddress(pecunia_lock, owner, '0x3e60B11022238Af208D4FAEe9192dAEE46D225a6', amountToHeir, '0x0000000000000000000000000000000000000000', owner_token_ids)
+	// // const tokenId = await rechargeWithAddress(pecunia_lock, owner, '0x3e60B11022238Af208D4FAEe9192dAEE46D225a6', amountToHeir, "test")
+	// let rc = await txn.wait();
+	// console.log(rc)
 	
 	// console.log(`Moving time...`);
   	// await network.provider.send("evm_increaseTime", [18000]);
   	// await network.provider.send("evm_mine");
   	// console.log(`Time moved by 18000`)
 
-	// await approveNFT(heir_token, heir, pecunia_lock.address, s(1))
+	await approveNFT(heir_token, owner, pecunia_lock.address, s(1))
 	let p2 = await getProof(psw, s(amountToHeir), owner)
 	let owner_address = '0x1AEb23bdC154f227De6b009936e1eBc0D4a9db20'
+	// Imp note: here owner is the heir
 	await pecunia_lock.connect(owner).withdrawSignature(p2.proof, p2.pswHash, p2.allHash, owner_address, {gasLimit: 1e7})
 	console.log('withdrawSignature done')
 
@@ -148,8 +150,8 @@ async function moveBlocks(numOfBlocks){
     console.log(` Blocks moved by ${numOfBlocks} `)
 }
 
-async function rechargeWithAddress(PecuniaLock, owner, heirAddr, amount, tokenuri){
-	const tokenId = await PecuniaLock.connect(owner).rechargeWithAddress(owner.address, heirAddr, tokenuri, {value: amount})
+async function rechargeWithAddress(PecuniaLock, owner, heirAddr, amount,  owner_token_address, owner_token_ids){
+	const tokenId = await PecuniaLock.connect(owner).rechargeWithAddress(owner.address, heirAddr, owner_token_address, owner_token_ids, {value: amount})
 	
 	console.log('step 2 rechargeWithAddress done')
 	return tokenId

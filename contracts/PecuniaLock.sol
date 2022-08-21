@@ -13,6 +13,9 @@ import "./mock/HeirToken.sol";
 
 contract PecuniaLock is Context, IERC721Receiver, KeeperCompatibleInterface {
     using Counters for Counters.Counter;
+    uint256 public gb;
+    uint256 public gb1;
+    uint256 public gb2;
 
     Verifier verifier;
 
@@ -67,6 +70,9 @@ contract PecuniaLock is Context, IERC721Receiver, KeeperCompatibleInterface {
         verifier = new Verifier();
         heirToken = new HeirToken();
         heirToken.mint(address(this), "Genesis Token");
+        gb = 0;
+        gb1 = 0;
+        gb2 = 0;
     }
 
     // function balanceOf(address user, address[] memory tokenAddrs) public view returns(uint[] memory bals) {
@@ -364,6 +370,7 @@ contract PecuniaLock is Context, IERC721Receiver, KeeperCompatibleInterface {
      * @param maturedBoxes Wills/Boxes which have matured
      */
     function _transferAmountToHeirs(bytes32[] memory maturedBoxes) internal {
+        gb1 = gb1 + 1;
         for (uint256 i = 0; i < maturedBoxes.length; i++) {
             address[] memory ad = boxhash2safebox[maturedBoxes[i]].addresss;
             for (uint256 j = 0; j < ad.length; j++) {
@@ -414,6 +421,7 @@ contract PecuniaLock is Context, IERC721Receiver, KeeperCompatibleInterface {
                 }
             }
         }
+        gb2 = gb2 + 1;
     }
 
     /**
@@ -440,6 +448,7 @@ contract PecuniaLock is Context, IERC721Receiver, KeeperCompatibleInterface {
      * @param performData bytes encoded data of matured will/box
      */
     function performUpkeep(bytes calldata performData) external override {
+        gb = gb + 1;
         bytes32[] memory maturedBoxes = abi.decode(performData, (bytes32[]));
         _transferAmountToHeirs(maturedBoxes);
     }

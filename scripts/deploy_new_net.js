@@ -19,17 +19,17 @@ async function main() {
 	const heir_token = await heirTokenFactory.attach(await pecunia_lock.heirToken());
 	console.log('Heir Token:', heir_token.address);
 
-	let psw = 'abc123'
-	let settingUpAmount = '0' //hex or int
-	let interval = '120'
-	let p = await getProof(psw, settingUpAmount, owner);
-	await pecunia_lock.register(p.boxhash, p.proof, p.pswHash, p.allHash, interval, {gasLimit: 1e6})
-	console.log('register done');
+	// let psw = 'abc123'
+	// let settingUpAmount = '0' //hex or int
+	// let interval = '120'
+	// let p = await getProof(psw, settingUpAmount, owner);
+	// await pecunia_lock.register(p.boxhash, p.proof, p.pswHash, p.allHash, interval, {gasLimit: 1e6})
+	// console.log('register done');
 
-	let amountToHeir = ethers.utils.parseEther("0.01") //hex or int
+	// let amountToHeir = ethers.utils.parseEther("0.01") //hex or int
 
-	const tokenId = await rechargeWithAddress(pecunia_lock, owner, '0x3e60B11022238Af208D4FAEe9192dAEE46D225a6', amountToHeir, "test")
-	console.log(`tokenId: ${tokenId}`)
+	// const tokenId = await rechargeWithAddress(pecunia_lock, owner, '0x3e60B11022238Af208D4FAEe9192dAEE46D225a6', amountToHeir, "test")
+	// console.log(`tokenId: ${tokenId}`)
 	
 	// console.log(`Moving time...`);
   	// await network.provider.send("evm_increaseTime", [18000]);

@@ -2,6 +2,8 @@
 import "@nomiclabs/hardhat-waffle";
 import "@nomiclabs/hardhat-ethers";
 import "@nomiclabs/hardhat-etherscan"
+import "hardhat-gas-reporter"
+
 import dotenv from "dotenv";
 
 dotenv.config({ path: ".env.local" });
@@ -17,7 +19,7 @@ export default {
       },
     },
   },
-  defaultNetwork: "mumbai",
+  defaultNetwork: "hardhat",
   networks: {
     hardhat: {
       allowUnlimitedContractSize: true,
