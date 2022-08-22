@@ -7,8 +7,8 @@ const snarkjs = require("snarkjs")
 const HeirToken = JSON.parse(fs.readFileSync("./artifacts/contracts/mock/HeirToken.sol/HeirToken.json"))
 const PecuniaLock = JSON.parse(fs.readFileSync("./artifacts/contracts/PecuniaLock.sol/PecuniaLock.json"));
 
-const PECUNIA_LOCK = '0x8360467F709157773CA12383d01989a83c0409fe';
-const HEIR_TOKEN = '0x25Ba5F49389777Cd191d2dC6236AD7c1da4A4f2D';
+const PECUNIA_LOCK = '0x45C38Ce5dDd5b34f2da4674cA0C3FeD18FB54dbb';
+const HEIR_TOKEN = '0x2597fC30474291CAdf084C1393A42142B0911713';
 
 async function main() {
 	const accounts = await hre.ethers.getSigners()
@@ -38,7 +38,7 @@ async function main() {
   	// await network.provider.send("evm_mine");
   	// console.log(`Time moved by 18000`)
 
-	await approveNFT(heir_token, owner, pecunia_lock.address, s(1))
+	// await approveNFT(heir_token, owner, pecunia_lock.address, s(1))
 	let p2 = await getProof(psw, s(amountToHeir), owner)
 	let owner_address = '0x1AEb23bdC154f227De6b009936e1eBc0D4a9db20'
 	// Imp note: here owner is the heir
