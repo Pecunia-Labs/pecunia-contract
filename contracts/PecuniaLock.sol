@@ -13,6 +13,9 @@ import "./mock/HeirToken.sol";
 
 contract PecuniaLock is Context, IERC721Receiver, KeeperCompatibleInterface {
     using Counters for Counters.Counter;
+// Observed gas is 92k + 8k buffer
+    uint256 private constant MIN_GAS_FOR_TRANSFER = 100_000;
+
     uint256 public gb;
     uint256 public gb1;
     uint256 public gb2;
@@ -58,6 +61,7 @@ contract PecuniaLock is Context, IERC721Receiver, KeeperCompatibleInterface {
         address[] addresss;
         mapping(address => uint256[]) heirToNfts;
         address nftAddress;
+        mapping(address => bool) isActive;
     }
 
     mapping(bytes32 => SafeBox) public boxhash2safebox;
@@ -208,6 +212,15 @@ contract PecuniaLock is Context, IERC721Receiver, KeeperCompatibleInterface {
         );
 
         SafeBox storage box = boxhash2safebox[boxhash];
+        require(
+            box.isActive[heirAddr] == false,
+            "PecuniaLock::rechargeWithAddress: Amount already assigned to heir"
+        );
+        require(
+            amount > 0 || (nftAddr != address(0) && nftTokenIds.length >= 0),
+            "PecuniaLock::rechargeWithAddress: Both amount and NFT cannot be empty"
+        );
+
         if (amount > 0) {
             _rechargeOfMatic(boxOwner, boxhash, heirAddr, amount);
             console.log("amount deposited=", amount);
@@ -219,10 +232,12 @@ contract PecuniaLock is Context, IERC721Receiver, KeeperCompatibleInterface {
             _rechargeOfNft(boxOwner, boxhash, heirAddr, nftAddr, nftTokenIds);
             console.log("NFTs deposited");
         }
-
+        box.isActive[heirAddr] = true;
+        // TODO: SOULBOUND NFTS
         tokenId = heirToken.mint(heirAddr, "");
         box.heirToTokenid[heirAddr] = tokenId;
         box.addresss.push(heirAddr);
+
         return tokenId;
     }
 
@@ -315,6 +330,11 @@ contract PecuniaLock is Context, IERC721Receiver, KeeperCompatibleInterface {
             "PecuniaLock::withdrawSignature: safebox not register yet"
         );
 
+        require(
+            box.isActive[heir],
+            "PecuniaLock::withdrawSignature: Heir has already taken amount"
+        );
+
         uint256 amount = box.heirToBalance[heir];
         console.log("amount withdrawn", amount);
 
@@ -352,9 +372,18 @@ contract PecuniaLock is Context, IERC721Receiver, KeeperCompatibleInterface {
         for (uint256 i = 0; i < boxHashes.length; i++) {
             bytes32 bh = boxHashes[i];
             SafeBox storage sb = boxhash2safebox[bh];
-            if (block.timestamp - sb.lastTimeStamp >= sb.heirToInterval) {
-                t_boxHashes[count] = bh;
-                count++;
+            bool boxAdded = false;
+            for (uint256 j = 0; j < (sb.addresss).length; j++) {
+                if (
+                    block.timestamp - sb.lastTimeStamp >= sb.heirToInterval && // time is up
+                    sb.isActive[sb.addresss[j]] && // heir has already not received loan amount
+                    sb.withdrawSigned[sb.addresss[j]] && //heir has completed withdraw signature
+                    boxAdded == false //will or box is aready not added
+                ) {
+                    t_boxHashes[count] = bh;
+                    count++;
+                    boxAdded = true;
+                }
             }
         }
         if (count != boxHashes.length) {
@@ -372,13 +401,15 @@ contract PecuniaLock is Context, IERC721Receiver, KeeperCompatibleInterface {
     function _transferAmountToHeirs(bytes32[] memory maturedBoxes) internal {
         gb1 = gb1 + 1;
         for (uint256 i = 0; i < maturedBoxes.length; i++) {
+            // SafeBox storage sb = boxhash2safebox[maturedBoxes[i]];
             address[] memory ad = boxhash2safebox[maturedBoxes[i]].addresss;
             for (uint256 j = 0; j < ad.length; j++) {
                 if (
                     boxhash2safebox[maturedBoxes[i]].withdrawSigned[ad[j]] &&
                     block.timestamp -
                         boxhash2safebox[maturedBoxes[i]].lastTimeStamp >=
-                    boxhash2safebox[maturedBoxes[i]].heirToInterval
+                    boxhash2safebox[maturedBoxes[i]].heirToInterval &&
+                    boxhash2safebox[maturedBoxes[i]].isActive[ad[j]]
                 ) {
                     uint256 amount = boxhash2safebox[maturedBoxes[i]]
                         .heirToBalance[ad[j]];
@@ -416,8 +447,14 @@ contract PecuniaLock is Context, IERC721Receiver, KeeperCompatibleInterface {
                             console.log("Owner NFT transffered");
                         }
                     }
-
+                    boxhash2safebox[maturedBoxes[i]].isActive[ad[j]] = false;
+                    boxhash2safebox[maturedBoxes[i]].withdrawSigned[
+                        ad[j]
+                    ] = false;
                     // TODO add else and gas optimization cond
+                }
+                if (gasleft() < MIN_GAS_FOR_TRANSFER) {
+                    return;
                 }
             }
         }
