@@ -13,7 +13,9 @@ import "./mock/HeirToken.sol";
 
 contract PecuniaLock is Context, IERC721Receiver, KeeperCompatibleInterface {
     using Counters for Counters.Counter;
-// Observed gas is 92k + 8k buffer
+    //include enum for will state
+
+    // Observed gas is 92k + 8k buffer
     uint256 private constant MIN_GAS_FOR_TRANSFER = 100_000;
 
     uint256 public gb;
@@ -24,7 +26,7 @@ contract PecuniaLock is Context, IERC721Receiver, KeeperCompatibleInterface {
 
     HeirToken public heirToken;
 
-    event Register(bytes32 indexed boxhash, address indexed user);
+    event Register(bytes32 indexed boxhash, address indexed owner);
 
     event RechargeMatic(
         address indexed sender,
@@ -39,10 +41,12 @@ contract PecuniaLock is Context, IERC721Receiver, KeeperCompatibleInterface {
     );
 
     event WithdrawSigned(
-        address indexed user,
+        address indexed owner,
         address indexed to,
         uint256 amount
     );
+
+    event BoxCanceled(address indexed owner);
 
     event FundsAdded(uint256 amountAdded, uint256 newBalance, address sender);
 
@@ -50,17 +54,21 @@ contract PecuniaLock is Context, IERC721Receiver, KeeperCompatibleInterface {
 
     bytes32[] private boxHashes;
 
+    ///Prevent Re-Entracy Attack
+    bool private locked;
+
     struct SafeBox {
         bytes32 boxhash;
         address user;
-        mapping(address => uint256) heirToBalance;
-        mapping(address => uint256) heirToTokenid;
+        address nftAddress;
         uint256 heirToInterval;
         uint256 lastTimeStamp;
-        mapping(address => bool) withdrawSigned;
+        uint256 totalDeposit;
         address[] addresss;
+        mapping(address => uint256) heirToBalance;
+        mapping(address => uint256) heirToTokenid;
+        mapping(address => bool) withdrawSigned;
         mapping(address => uint256[]) heirToNfts;
-        address nftAddress;
         mapping(address => bool) isActive;
     }
 
@@ -69,6 +77,8 @@ contract PecuniaLock is Context, IERC721Receiver, KeeperCompatibleInterface {
     mapping(address => bytes32) public user2boxhash;
 
     mapping(uint256 => bool) public usedProof;
+
+    mapping(uint256 => bool) public isHeirTokenValid;
 
     constructor() {
         verifier = new Verifier();
@@ -88,20 +98,6 @@ contract PecuniaLock is Context, IERC721Receiver, KeeperCompatibleInterface {
     //         bals[i] = box.balance[tokenAddr];
     //     }
     // }
-
-    /**
-     * @notice Check if heir is registered in the will
-     * @param boxhash the hash of box
-     * @param heir address of heir
-     * @return bool value
-     */
-    function heirIsValid(bytes32 boxhash, address heir)
-        public
-        view
-        returns (bool)
-    {
-        return boxhash2safebox[boxhash].heirToBalance[heir] > 0;
-    }
 
     /**
      * @notice Register the user
@@ -256,6 +252,7 @@ contract PecuniaLock is Context, IERC721Receiver, KeeperCompatibleInterface {
     ) internal {
         SafeBox storage box = boxhash2safebox[boxhash];
         box.heirToBalance[heirAddr] += amount;
+        box.totalDeposit += amount;
         emit RechargeMatic(boxOwner, heirAddr, amount);
     }
 
@@ -319,10 +316,6 @@ contract PecuniaLock is Context, IERC721Receiver, KeeperCompatibleInterface {
             keccak256(abi.encodePacked(pswHash, boxOwner)) == boxhash,
             "PecuniaLock::withdrawSignature: pswHash error"
         );
-        require(
-            heirIsValid(boxhash, heir),
-            "PecuniaLock::withdrawSignature: heir not valid"
-        );
 
         SafeBox storage box = boxhash2safebox[boxhash];
         require(
@@ -331,8 +324,13 @@ contract PecuniaLock is Context, IERC721Receiver, KeeperCompatibleInterface {
         );
 
         require(
+            box.heirToTokenid[heir] > 0,
+            "PecuniaLock::withdrawSignature: Heir not valid"
+        );
+
+        require(
             box.isActive[heir],
-            "PecuniaLock::withdrawSignature: Heir has already taken amount"
+            "PecuniaLock::withdrawSignature: Heir has already taken amount or will is canceled"
         );
 
         uint256 amount = box.heirToBalance[heir];
@@ -359,6 +357,70 @@ contract PecuniaLock is Context, IERC721Receiver, KeeperCompatibleInterface {
 
         box.withdrawSigned[heir] = true;
         emit WithdrawSigned(box.user, heir, amount);
+    }
+
+    /**
+     * @notice cancels the will and transfer all the assets back to owner and emits
+     */
+    function cancelBoxAndTransferFundsToOwner() external {
+        address boxOwner = msg.sender;
+        bytes32 boxhash = user2boxhash[boxOwner];
+
+        require(
+            boxhash != bytes32(0),
+            "PecuniaLock::cancelBoxAndTransferFundsToOwner: safebox not register yet"
+        );
+        SafeBox storage box = boxhash2safebox[boxhash];
+        require(
+            msg.sender == box.user,
+            "PecuniaLock::cancelBoxAndTransferFundsToOwner: only owner can cancel this"
+        );
+        address[] memory heirAddresses = box.addresss;
+
+        // Transfer Matic
+        uint256 totalDeposit = box.totalDeposit;
+        if (totalDeposit > 0) {
+            box.totalDeposit = 0; //prevent re-entracy
+            safeTransferETH(boxOwner, totalDeposit);
+        }
+
+        //Transfer Nfts
+        for (uint256 i = 0; i < heirAddresses.length; i++) {
+            if (box.isActive[heirAddresses[i]]) {
+                if (box.heirToNfts[heirAddresses[i]].length > 0) {
+                    for (
+                        uint256 j = 0;
+                        j < box.heirToNfts[heirAddresses[i]].length;
+                        j++
+                    ) {
+                        IERC721(box.nftAddress).safeTransferFrom(
+                            address(this),
+                            boxOwner,
+                            box.heirToNfts[heirAddresses[i]][j]
+                        );
+                        console.log("Owner NFTs trasnffered back to owner");
+                    }
+                }
+                box.isActive[heirAddresses[i]] = false;
+            }
+        }
+        delete (boxhash2safebox[boxhash]);
+        emit BoxCanceled(boxOwner);
+    }
+
+    function safeTransferETH(address to, uint256 value) internal {
+        require(
+            address(this).balance >= value,
+            "PecuniaLock::safeTransferETH: Insufficient amount"
+        );
+        require(!locked, "PecuniaLock::safeTransferETH: Re-Entracy");
+        locked = true;
+        (bool success, ) = to.call{value: value}(new bytes(0));
+        require(
+            success,
+            "TransferHelper::safeTransferETH: ETH transfer failed"
+        );
+        locked = false;
     }
 
     // Chainlink Keeper Functions
