@@ -15,6 +15,9 @@ contract PecuniaLock is Context, IERC721Receiver, KeeperCompatibleInterface {
     using Counters for Counters.Counter;
     //include enum for will state
 
+    ///Minimum interval between payments after the will is matured
+    uint32 public immutable minTimeIntBetweenPayments;
+
     // Observed gas is 92k + 8k buffer
     uint256 private constant MIN_GAS_FOR_TRANSFER = 100_000;
 
@@ -59,13 +62,18 @@ contract PecuniaLock is Context, IERC721Receiver, KeeperCompatibleInterface {
 
     struct SafeBox {
         bytes32 boxhash;
+        uint64 numberOfPayments; //Number of payment we need to do to heir
+        uint64 paymentsDoneToHeir; //counter for number of payments done to heir, init=0
         address user;
         address nftAddress;
         uint256 heirToInterval;
-        uint256 lastTimeStamp;
+        uint256 timeAtWhichPaymentStarts; //this is the time at whcih the payment will start
         uint256 totalDeposit;
+        uint256 lastPaymentTime; //time stamp to remember last payment time, next payment will be lastPaymentTime+timeIntBetweenPayments
+        uint256 timeIntBetweenPayments; //time interval between payments we need to maintain for batch payments
         address[] addresss;
         mapping(address => uint256) heirToBalance;
+        mapping(address => uint256) ratePerHeir; // amount of crypto transffered per interva;
         mapping(address => uint256) heirToTokenid;
         mapping(address => bool) withdrawSigned;
         mapping(address => uint256[]) heirToNfts;
@@ -84,6 +92,7 @@ contract PecuniaLock is Context, IERC721Receiver, KeeperCompatibleInterface {
         verifier = new Verifier();
         heirToken = new HeirToken();
         heirToken.mint(address(this), "Genesis Token");
+        minTimeIntBetweenPayments = 1 seconds;
         gb = 0;
         gb1 = 0;
         gb2 = 0;
@@ -106,13 +115,17 @@ contract PecuniaLock is Context, IERC721Receiver, KeeperCompatibleInterface {
      * @param pswHash password hash
      * @param allHash hash of amount and password
      * @param interval time after which will amount is transffered
+     * @param timeIntBetweenPayments time interval between the payments done to heir
+     * @param numberOfPayments number of payments done toheir
      */
     function register(
         bytes32 boxhash,
         uint256[8] memory proof,
         uint256 pswHash,
         uint256 allHash,
-        uint256 interval
+        uint256 interval,
+        uint256 timeIntBetweenPayments,
+        uint64 numberOfPayments
     ) public {
         SafeBox storage box = boxhash2safebox[boxhash];
 
@@ -139,10 +152,22 @@ contract PecuniaLock is Context, IERC721Receiver, KeeperCompatibleInterface {
         );
         require(interval > 0, "PecuniaLock::register: interval cannot be zero");
 
+        require(
+            numberOfPayments >= 1,
+            "PecuniaLock::register: Number of payments should more than zero"
+        );
+
+        require(
+            timeIntBetweenPayments >= minTimeIntBetweenPayments,
+            "PecuniaLock::register: Interval between payments should be greater than min interval"
+        );
+
         box.boxhash = boxhash;
         box.user = _msgSender();
         box.heirToInterval = interval;
-        box.lastTimeStamp = block.timestamp;
+        box.timeAtWhichPaymentStarts = block.timestamp;
+        box.numberOfPayments = numberOfPayments;
+        box.timeIntBetweenPayments = timeIntBetweenPayments;
 
         user2boxhash[box.user] = boxhash;
         boxHashes.push(boxhash);
@@ -217,6 +242,11 @@ contract PecuniaLock is Context, IERC721Receiver, KeeperCompatibleInterface {
             "PecuniaLock::rechargeWithAddress: Both amount and NFT cannot be empty"
         );
 
+        require(
+            amount % box.numberOfPayments == 0,
+            "PecuniaLock::rechargeWithAddress: amount should be divisible by number of payments"
+        );
+
         if (amount > 0) {
             _rechargeOfMatic(boxOwner, boxhash, heirAddr, amount);
             console.log("amount deposited=", amount);
@@ -253,6 +283,7 @@ contract PecuniaLock is Context, IERC721Receiver, KeeperCompatibleInterface {
         SafeBox storage box = boxhash2safebox[boxhash];
         box.heirToBalance[heirAddr] += amount;
         box.totalDeposit += amount;
+        box.ratePerHeir[heirAddr] = amount / box.numberOfPayments;
         emit RechargeMatic(boxOwner, heirAddr, amount);
     }
 
@@ -375,6 +406,10 @@ contract PecuniaLock is Context, IERC721Receiver, KeeperCompatibleInterface {
             msg.sender == box.user,
             "PecuniaLock::cancelBoxAndTransferFundsToOwner: only owner can cancel this"
         );
+        require(
+            block.timestamp < box.timeAtWhichPaymentStarts,
+            "PecuniaLock::cancelBoxAndTransferFundsToOwner: cannot cancel time has passed"
+        );
         address[] memory heirAddresses = box.addresss;
 
         // Transfer Matic
@@ -421,6 +456,7 @@ contract PecuniaLock is Context, IERC721Receiver, KeeperCompatibleInterface {
             "TransferHelper::safeTransferETH: ETH transfer failed"
         );
         locked = false;
+        emit FundsTransferred(value, to);
     }
 
     // Chainlink Keeper Functions
@@ -437,7 +473,7 @@ contract PecuniaLock is Context, IERC721Receiver, KeeperCompatibleInterface {
             bool boxAdded = false;
             for (uint256 j = 0; j < (sb.addresss).length; j++) {
                 if (
-                    block.timestamp - sb.lastTimeStamp >= sb.heirToInterval && // time is up
+                    block.timestamp - sb.timeAtWhichPaymentStarts >= sb.heirToInterval && // time is up
                     sb.isActive[sb.addresss[j]] && // heir has already not received loan amount
                     sb.withdrawSigned[sb.addresss[j]] && //heir has completed withdraw signature
                     boxAdded == false //will or box is aready not added
@@ -467,24 +503,34 @@ contract PecuniaLock is Context, IERC721Receiver, KeeperCompatibleInterface {
             address[] memory ad = boxhash2safebox[maturedBoxes[i]].addresss;
             for (uint256 j = 0; j < ad.length; j++) {
                 if (
-                    boxhash2safebox[maturedBoxes[i]].withdrawSigned[ad[j]] &&
-                    block.timestamp -
-                        boxhash2safebox[maturedBoxes[i]].lastTimeStamp >=
-                    boxhash2safebox[maturedBoxes[i]].heirToInterval &&
-                    boxhash2safebox[maturedBoxes[i]].isActive[ad[j]]
+                    (boxhash2safebox[maturedBoxes[i]].withdrawSigned[ad[j]]) && //withdraw signature done
+                    (block.timestamp -
+                        boxhash2safebox[maturedBoxes[i]].timeAtWhichPaymentStarts >=
+                        boxhash2safebox[maturedBoxes[i]].heirToInterval) && // will has matured meaning timestamp has passed interval
+                    (block.timestamp -
+                        boxhash2safebox[maturedBoxes[i]].lastPaymentTime >=
+                        boxhash2safebox[maturedBoxes[i]]
+                            .timeIntBetweenPayments) && // check if time diff b/w last payment and current time is greater than timeIntBetweenPayments
+                    boxhash2safebox[maturedBoxes[i]].isActive[ad[j]] //check if will for the heir is active and not cancelled
                 ) {
-                    uint256 amount = boxhash2safebox[maturedBoxes[i]]
-                        .heirToBalance[ad[j]];
-                    if (amount > 0) {
-                        console.log("paying amt, to:", amount, ad[j]);
-                        bool success = payable(ad[j]).send(amount);
-                        if (success) {
-                            boxhash2safebox[maturedBoxes[i]].heirToBalance[
-                                ad[j]
-                            ] = 0;
-                            console.log("Funds Transferred");
-                            emit FundsTransferred(amount, ad[j]);
-                        }
+                    // We first rateToSend which is amount of crypto transffered to heir at each interval.
+                    // This is equal to amount_deposited/number_of_payments
+                    uint256 rateToSend = boxhash2safebox[maturedBoxes[i]]
+                        .ratePerHeir[ad[j]];
+
+                    if (
+                        rateToSend > 0 &&
+                        // we are keeping a counter of number of payments done to heir and that should be less that number_of_paymets
+                        boxhash2safebox[maturedBoxes[i]].paymentsDoneToHeir <
+                        boxhash2safebox[maturedBoxes[i]].numberOfPayments
+                    ) {
+                        console.log("paying amt, to:", rateToSend, ad[j]);
+                        //now we need to update two things for batch payments first is payments already done to heir and the second is
+                        // last timestamp when the payment was done to heir
+                        boxhash2safebox[maturedBoxes[i]].paymentsDoneToHeir++;
+                        boxhash2safebox[maturedBoxes[i]].lastPaymentTime = block
+                            .timestamp;
+                        safeTransferETH(ad[j], rateToSend);
                     }
                     if (
                         boxhash2safebox[maturedBoxes[i]].nftAddress !=
@@ -658,7 +704,7 @@ contract PecuniaLock is Context, IERC721Receiver, KeeperCompatibleInterface {
         return (
             boxhash2safebox[user2boxhash[owner]].boxhash,
             boxhash2safebox[user2boxhash[owner]].heirToInterval,
-            boxhash2safebox[user2boxhash[owner]].lastTimeStamp
+            boxhash2safebox[user2boxhash[owner]].timeAtWhichPaymentStarts
         );
     }
 
@@ -677,7 +723,7 @@ contract PecuniaLock is Context, IERC721Receiver, KeeperCompatibleInterface {
         return (
             boxhash2safebox[boxhash].boxhash,
             boxhash2safebox[boxhash].heirToInterval,
-            boxhash2safebox[boxhash].lastTimeStamp
+            boxhash2safebox[boxhash].timeAtWhichPaymentStarts
         );
     }
 
@@ -686,7 +732,7 @@ contract PecuniaLock is Context, IERC721Receiver, KeeperCompatibleInterface {
      */
     function getTimeLeftFromOwner(address owner) public view returns (uint256) {
         return (block.timestamp -
-            boxhash2safebox[user2boxhash[owner]].lastTimeStamp);
+            boxhash2safebox[user2boxhash[owner]].timeAtWhichPaymentStarts);
     }
 
     /**

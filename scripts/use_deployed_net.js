@@ -7,8 +7,8 @@ const snarkjs = require("snarkjs")
 const HeirToken = JSON.parse(fs.readFileSync("./artifacts/contracts/mock/HeirToken.sol/HeirToken.json"))
 const PecuniaLock = JSON.parse(fs.readFileSync("./artifacts/contracts/PecuniaLock.sol/PecuniaLock.json"));
 
-const PECUNIA_LOCK = '0x45C38Ce5dDd5b34f2da4674cA0C3FeD18FB54dbb';
-const HEIR_TOKEN = '0x2597fC30474291CAdf084C1393A42142B0911713';
+const PECUNIA_LOCK = '0x2a775e12A63EFeb112c5c2f25A24533b49A930C3';
+const HEIR_TOKEN = '0x5FF9189D6853708eE431c4a798a33D98E5c0169f';
 
 async function main() {
 	const accounts = await hre.ethers.getSigners()

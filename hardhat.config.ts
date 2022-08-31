@@ -19,7 +19,7 @@ export default {
       },
     },
   },
-  defaultNetwork: "hardhat",
+  defaultNetwork: "mumbai",
   networks: {
     hardhat: {
       allowUnlimitedContractSize: true,

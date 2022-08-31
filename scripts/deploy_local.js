@@ -30,14 +30,18 @@ async function main() {
     console.log(s(onft_txn.value));
     const onft_tokenId = (s(onft_txn.value))
 
+	//Registration
     await printNftOwner(owner_token, onft_tokenId, "owner nft") 
 	let psw = 'abc123'
 	let settingUpAmount = '0' //hex or int
 	let interval = '120'
 	let p = await getProof(psw, settingUpAmount, owner);
-	await pecunia_lock.connect(owner).register(p.boxhash, p.proof, p.pswHash, p.allHash, interval, {gasLimit: 1e6})
+	let timeIntBetweenPayments = 5 //time interval between the payments done to heir
+	let numberOfPayments = 2 //number of payments done toheir
+	await pecunia_lock.connect(owner).register(p.boxhash, p.proof, p.pswHash, p.allHash, interval, timeIntBetweenPayments, numberOfPayments, {gasLimit: 1e6})
 	console.log('register done');
 
+	//RECHARGE THE WILL
     await printBalances(owner, pecunia_lock, heir)
     await printNftOwner(owner_token, onft_tokenId, "owner nft") 
     let owner_token_ids = [onft_tokenId]
@@ -49,11 +53,14 @@ async function main() {
     await printBalances(owner, pecunia_lock, heir)
     await printNftOwner(owner_token, onft_tokenId, "owner nft") 
 
+
+	//CANCEL THE WILL
 	// const cancel_txn = await pecunia_lock.connect(owner).cancelBoxAndTransferFundsToOwner();
 	await printBalances(owner, pecunia_lock, heir)
     await printNftOwner(owner_token, onft_tokenId, "owner nft") 
 
 	
+	//WITHDRAW SIGNATURE
 	await approveNFT(heir_token, heir, pecunia_lock.address, s(1))
 	let p2 = await getProof(psw, s(amountToHeir), owner)
 	await pecunia_lock.connect(heir).withdrawSignature(p2.proof, p2.pswHash, p2.allHash, owner.address, {gasLimit: 1e7})
