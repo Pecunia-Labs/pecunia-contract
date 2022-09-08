@@ -2,7 +2,8 @@
 
 ![](./pecunia.jpeg)
 
-Pecunia provides clients the ability to ensure that their heirs will be able to get their share of the crypto and NFT once the client dies.
+Pecunia ensures safe and secure estate planning for cryptocurrency and NFTs.
+
 # Architecture:
 
 
@@ -18,9 +19,13 @@ We have used Circom & snarkjs(groth16) to develop the circuits and creating the 
 
 ZK Proof are generated at two situations, first when the owner registers and the second time when the heir signs the `WithdrawSignature`. The proof is unique everytime it is generated but we are checking its uniqueness in our smart contracts to prevent used proof. The trusted setup is performed and the files generated are uploaded(though they should not be).
 
+## Death API
+
+Currently, the death API in the United States requires monetary consideration so for this project, we are given the assumption that the person died. However given enough funds we will also integrate the death API which then triggers the Chainlink Keepers to give the funds.
+
 ## Front End: 
 
-The front of the Dapp is built using React and Ether.js helped us so much with communicating with our smart contract.
+The front end was built using React and Ether.js.
 
 
 ## Tech Stack
@@ -54,13 +59,19 @@ PecuniaLock.sol: [0x45C38Ce5dDd5b34f2da4674cA0C3FeD18FB54dbb] (https://mumbai.po
 
 ## Inspiration
 
-Currently, there is no proper way to transfer crypto to the heirs or next of kin. So pecunia offer a safe way to do it.
+Currently, there is no proper way to transfer crypto to the heirs or next of kin. So pecunia offers a safe and secure way using ZK Snarks.
 
 ## TODO/Areas For Improvement
 - We will integrate DEXs which will allow the user to swap and deposit any token into his will by just depositing MATIC.
 - We will be integrating functionality to deposit funds to different liquidity pools which will earn interest from the funds and including provision for dynamic NFTs(containing the real time balances that will be transferred to heir)
 - We will introduce batch pay which will allow the transfer of funds to heir at multiple intervals. This will prevent the heir to carelessly spend all the funds at one go.
 
+
+
 ## Security Considerations
 
-The Repository is currently not audited and is only meant for testing purposes on Testnets.
+The Repository is currently not audited and is only meant for testing purposes on Testnets. Try us at https://spheron.infura-ipfs.io/ipfs/QmNXar4exH4X9ULxXd1KikFsV5FiviNeTsTRoEwfCnzY4f/
+
+## Contact
+
+Email us at pecuniaxyz@gmail.com 
